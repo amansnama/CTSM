@@ -13,6 +13,9 @@ ccs_config
 **/.svn/**
 .svn/
 
+# AmanS: Ignore temporarty i90 fortran files
+*.i90
+
 # netcdf files
 *.nc
 # but don't ignore netcdf files here:

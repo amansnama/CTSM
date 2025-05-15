@@ -161,6 +161,9 @@ module IrrigationMod
      ! https://github.com/ESCOMP/ctsm/issues/565.)
      integer :: irrig_method_default
 
+     ! AmanS: USGS observation based surface groundwater irrigation ratio
+     logical :: use_usgs_irrig_ratio
+
   end type irrigation_params_type
 
   type, public :: irrigation_type
@@ -382,6 +385,7 @@ contains
     logical  :: use_groundwater_irrigation
     character(len=64) :: irrig_method_default
     integer  :: irrig_method_default_int
+    logical  :: use_usgs_irrig_ratio   ! AmanS
 
     integer :: ierr                 ! error code
     integer :: unitn                ! unit for namelist file
@@ -393,7 +397,8 @@ contains
     namelist /irrigation_inparm/ irrig_min_lai, irrig_start_time, irrig_length, &
          irrig_target_smp, irrig_depth, irrig_threshold_fraction, &
          irrig_river_volume_threshold, limit_irrigation_if_rof_enabled, &
-         use_groundwater_irrigation, irrig_method_default
+         use_groundwater_irrigation, irrig_method_default, &
+         use_usgs_irrig_ratio
     
     ! Initialize options to garbage defaults, forcing all to be specified explicitly in
     ! order to get reasonable results
@@ -407,6 +412,7 @@ contains
     limit_irrigation_if_rof_enabled = .false.
     use_groundwater_irrigation = .false.
     irrig_method_default = ' '
+    use_usgs_irrig_ratio = .false.
 
     if (masterproc) then
        unitn = getavu()
@@ -434,6 +440,7 @@ contains
     call shr_mpi_bcast(limit_irrigation_if_rof_enabled, mpicom)
     call shr_mpi_bcast(use_groundwater_irrigation, mpicom)
     call shr_mpi_bcast(irrig_method_default, mpicom)
+    call shr_mpi_bcast(use_usgs_irrig_ratio, mpicom)
 
     call translate_irrig_method_default
 
@@ -447,7 +454,8 @@ contains
          irrig_river_volume_threshold = irrig_river_volume_threshold, &
          limit_irrigation_if_rof_enabled = limit_irrigation_if_rof_enabled, &
          use_groundwater_irrigation = use_groundwater_irrigation, &
-         irrig_method_default = irrig_method_default_int)
+         irrig_method_default = irrig_method_default_int, &
+         use_usgs_irrig_ratio = use_usgs_irrig_ratio)
 
     if (masterproc) then
        write(iulog,*) ' '
@@ -466,6 +474,7 @@ contains
        end if
        write(iulog,*) 'use_groundwater_irrigation = ', use_groundwater_irrigation
        write(iulog,*) 'irrig_method_default = ', irrig_method_default
+       write(iulog,*) 'use_usgs_irrig_ratio = ', use_usgs_irrig_ratio
        write(iulog,*) ' '
 
        call this%CheckNamelistValidity(use_aquifer_layer)
@@ -1377,6 +1386,7 @@ contains
     !
     ! !USES:
     use shr_const_mod      , only : SHR_CONST_TKFRZ
+    use spmdMod        , only : masterproc   ! AmanS
     !
     ! !ARGUMENTS:
     class(irrigation_type) , intent(inout) :: this
@@ -1466,6 +1476,11 @@ contains
     SHR_ASSERT_ALL_FL((ubound(h2osoi_liq) == (/bounds%endc, nlevgrnd/)), sourcefile, __LINE__)
     SHR_ASSERT_ALL_FL((ubound(volr) == (/bounds%endg/)), sourcefile, __LINE__)
 
+    !-----------------------------------------------------------------------
+    ! AmanS
+    associate( &
+         GW_ratio => col%GW_ratio)
+    !-----------------------------------------------------------------------
 
     ! Determine if irrigation is needed (over irrigated soil columns)
     
@@ -1579,6 +1594,34 @@ contains
        deficit_volr_limited(bounds%begc:bounds%endc) = deficit(bounds%begc:bounds%endc)
     end if
 
+    ! AmanS: 2025/05/14
+    ! Test for namelist consistency
+    if (masterproc) then
+      if ((this%params%use_groundwater_irrigation == .false.) .and. &
+         (this%params%use_usgs_irrig_ratio)) then
+         write(iulog,*) 'ERROR: use_usgs_irrig_ratio must be used together with use_groundwater_irrigation'
+         call endrun(subname // 'use_usgs_irrig_ratio must be used together with use_groundwater_irrigation '// &
+              errMsg(sourcefile, __LINE__))
+      end if
+    end if
+
+
+    ! Scaling sfc_irrig_rate_patch (deficit_volr_limited) by observed USGS sfc/gw ratio
+    if (this%params%use_usgs_irrig_ratio) then
+         do fc = 1, check_for_irrig_col_filter%num
+            c = check_for_irrig_col_filter%indices(fc)
+
+            if ((1._r8 - GW_ratio(c)) * deficit(c) <= deficit_volr_limited(c)) then
+               ! Limit sfc_irrig_rate_patch by deficit * observed surface irrigation ratio
+               deficit_volr_limited(c) = (1._r8 - GW_ratio(c)) * deficit(c)
+            ! elseif ((1._r8 - GW_ratio(c)) * deficit(c) > deficit_volr_limited(c)) then
+               ! Limit sfc_irrig_rate_patch to deficit_volr_limited which is the default behaviour
+               ! An alternative is to allow more than deficit_volr_limited
+               ! deficit_volr_limited(c) = (1._r8 - GW_ratio(c)) * deficit(c)
+            end if
+         end do
+    end if
+
     ! Convert deficits to irrigation rate
     do fp = 1, num_exposedvegp
        p = filter_exposedvegp(fp)
@@ -1597,6 +1640,8 @@ contains
           this%n_irrig_steps_left_patch(p) = this%irrig_nsteps_per_day
        end if
     end do
+
+    end associate
 
   end subroutine CalcIrrigationNeeded
 

@@ -57,6 +57,7 @@ module ColumnType
      real(r8), pointer :: micro_sigma          (:)   ! microtopography pdf sigma (m)
      real(r8), pointer :: topo_slope           (:)   ! gridcell topographic slope
      real(r8), pointer :: topo_std             (:)   ! gridcell elevation standard deviation
+     real(r8), pointer :: GW_ratio             (:)   ! AmanS: FFelfelani added column USGS GW_ratio
 
      ! vertical levels
      integer , pointer :: snl                  (:)   ! number of snow layers
@@ -160,6 +161,8 @@ contains
     allocate(this%is_hillslope_column(begc:endc))              ; this%is_hillslope_column(:) = .false.
     allocate(this%hydrologically_active(begc:endc))            ; this%hydrologically_active(:) = .false.
     allocate(this%urbpoi      (begc:endc))                     ; this%urbpoi      (:)   = .false.
+    ! AmanS: FFelfelani column USGS GW_ratio
+    allocate(this%GW_ratio    (begc:endc))                     ; this%GW_ratio    (:)   = nan
 
   end subroutine Init
 
@@ -208,6 +211,7 @@ contains
     deallocate(this%hill_distance)
     deallocate(this%hill_aspect  )
     deallocate(this%urbpoi       )
+    deallocate(this%GW_ratio     )
   end subroutine Clean
 
   !-----------------------------------------------------------------------

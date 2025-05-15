@@ -26,6 +26,7 @@ module GridcellType
      real(r8), pointer :: lon              (:) ! longitude (radians)
      real(r8), pointer :: latdeg           (:) ! latitude (degrees)
      real(r8), pointer :: londeg           (:) ! longitude (degrees)
+     real(r8), pointer :: GW_ratio         (:) ! AmanS: FFelfelani added gridcell USGS GW_ratio
      logical , pointer :: active           (:) ! just needed for symmetry with other subgrid types
 
      integer,  pointer :: nbedrock         (:) ! index of uppermost bedrock layer
@@ -77,6 +78,10 @@ contains
 
     allocate(this%landunit_indices(1:max_lunit, begg:endg)); this%landunit_indices(:,:) = ispval
 
+    ! AmanS: gridcell USGS GW_ratio
+    ! This is initialized in initVerticalMod
+    allocate(this%GW_ratio  (begg:endg)) ; this%GW_ratio  (:) = nan
+
   end subroutine Init
 
   !------------------------------------------------------------------------
@@ -97,6 +102,7 @@ contains
     deallocate(this%dayl             )
     deallocate(this%prev_dayl        )
     deallocate(this%landunit_indices )
+    deallocate(this%GW_ratio         )
 
   end subroutine Clean
 

@@ -527,6 +527,14 @@ Cannot be combined with lower_boundary_condition = 3 or 4
 Irrigation method used if not specified on surface dataset
 </entry>
 
+<!-- AmanS: USGS observation based irrigation ratio -->
+<entry id="use_usgs_irrig_ratio" type="logical" category="clm_physics"
+       group="irrigation_inparm" valid_values="" >
+If TRUE, use the USGS groundwater proportion to scale surface and groundwater irrigation.
+
+Can only be used with use_groundwater_irrigation = .true.
+</entry>
+
 <entry id="irrigate" type="logical" category="clm_physics"
        group="clm_inparm"  >
 If TRUE, irrigation will be active.
