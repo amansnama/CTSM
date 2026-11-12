@@ -36,6 +36,9 @@ module SoilHydrologyMod
   public :: ThetaBasedWaterTable ! Calculate water table from soil moisture state
   public :: LateralFlowPowerLaw  ! Calculate lateral flow based on power law drainage function
   public :: RenewCondensation    ! Misc. corrections
+  !
+  ! !PRIVATE MEMBER FUNCTIONS:
+  private :: TileDrainColumn     ! Linear tile drain for one column
 
   !-----------------------------------------------------------------------
   real(r8), private :: baseflow_scalar = 1.e-2_r8
@@ -979,6 +982,7 @@ contains
      use clm_time_manager , only : get_step_size
      use clm_varpar       , only : nlevsoi, nlevgrnd, nlayer, nlayert
      use clm_varcon       , only : pondmx, tfrz, watmin,rpi, secspday, nlvic
+     use clm_varctl       , only : use_tile_drain
      use column_varcon    , only : icol_roof, icol_road_imperv, icol_road_perv
      use abortutils       , only : endrun
      !
@@ -1090,6 +1094,8 @@ contains
           qflx_qrgwl         =>    waterflux_inst%qflx_qrgwl_col         , & ! Output: [real(r8) (:)   ] qflx_surf at glaciers, wetlands, lakes (mm H2O /s)
           qflx_rsub_sat      =>    waterflux_inst%qflx_rsub_sat_col      , & ! Output: [real(r8) (:)   ] soil saturation excess [mm h2o/s]                 
           qflx_drain_perched =>    waterflux_inst%qflx_drain_perched_col , & ! Output: [real(r8) (:)   ] perched wt sub-surface runoff (mm H2O /s)         
+          qflx_tile          =>    waterflux_inst%qflx_tile_col          , & ! Output: [real(r8) (:)   ] tile drainage, separate flux leaving as surface runoff (mm H2O /s)
+          qflx_tile_vr       =>    waterflux_inst%qflx_tile_vr_col       , & ! Output: [real(r8) (:,:) ] tile drainage removed from each layer (mm H2O /s)  
 
           h2osoi_liq         =>    waterstate_inst%h2osoi_liq_col        , & ! Output: [real(r8) (:,:) ] liquid water (kg/m2)                            
           h2osoi_ice         =>    waterstate_inst%h2osoi_ice_col          & ! Output: [real(r8) (:,:) ] ice lens (kg/m2)                                
@@ -1120,6 +1126,8 @@ contains
           qflx_rsub_sat(c) = 0._r8
           rsub_top(c)      = 0._r8
           fracice_rsub(c)  = 0._r8
+          qflx_tile(c)     = 0._r8
+          qflx_tile_vr(c,1:nlevsoi) = 0._r8
 
        end do
 
@@ -1418,6 +1426,17 @@ contains
 
           endif
 
+          !============================== TILE DRAINAGE ====================================
+          ! Tile drain (see TileDrainColumn). Done after rsub_top has updated h2osoi_liq and zwt,
+          ! so the head it sees already reflects baseflow. It sets qflx_tile and qflx_tile_vr,
+          ! removes only water that is there (never below watmin), and deepens zwt. qflx_tile
+          ! is NOT added to qflx_drain: it is a separate flux that leaves as surface runoff
+          ! (total runoff, Flrl_rofsur, and the nitrate runoff loss).
+          if (use_tile_drain) then
+             call TileDrainColumn(c, nlevsoi, dtime, soilstate_inst, temperature_inst, &
+                  soilhydrology_inst, waterstate_inst, waterflux_inst, jwt(c))
+          end if
+
        end do
 
        !  excessive water above saturation added to the above unsaturated layer like a bucket
@@ -1513,7 +1532,8 @@ contains
        do fc = 1, num_hydrologyc
           c = filter_hydrologyc(fc)
 
-          ! Sub-surface runoff and drainage
+          ! Sub-surface runoff and drainage. Tile drainage (qflx_tile) is NOT part of
+          ! qflx_drain: it is a separate flux that leaves as surface runoff.
 
           qflx_drain(c) = qflx_rsub_sat(c) + rsub_top(c)
 
@@ -1537,6 +1557,140 @@ contains
      end associate
 
    end subroutine Drainage
+
+  !-----------------------------------------------------------------------
+  subroutine TileDrainColumn(c, nbot, dtime, soilstate_inst, temperature_inst, &
+       soilhydrology_inst, waterstate_inst, waterflux_inst, jwt_c)
+     !
+     ! !DESCRIPTION:
+     ! Linear tile drain for one column: qflx_tile = tile_rate * (height of the water
+     ! table above the drain).
+     !
+     ! Call this after the baseflow (rsub_top) has updated h2osoi_liq and zwt. Water is
+     ! taken from the saturated layers between the water table and the drain, starting
+     ! at the drain layer and working upward, and never more than a layer holds above
+     ! watmin or can drain with the specific yield (so zwt cannot pass the drain).
+     ! qflx_tile is the water actually removed divided by dtime, so the watmin fixers
+     ! in the caller (which adjust rsub_top or qflx_rsub_sat only) never have to refill a
+     ! layer emptied here. qflx_tile_vr holds the removal layer by layer, for the nitrate
+     ! runoff loss.
+     !
+     ! qflx_tile must be zero on entry. It is a separate flux that leaves as surface runoff;
+     ! the caller does NOT add it to qflx_drain.
+     !
+     ! !USES:
+     use clm_varcon       , only : tfrz, watmin
+     use clm_varpar       , only : nlevsoi
+     !
+     ! !ARGUMENTS:
+     integer                  , intent(in)    :: c                    ! column index
+     integer                  , intent(in)    :: nbot                 ! deepest layer water can be drained from
+     real(r8)                 , intent(in)    :: dtime                ! land model time step (sec)
+     type(soilstate_type)     , intent(in)    :: soilstate_inst
+     type(temperature_type)   , intent(in)    :: temperature_inst
+     type(soilhydrology_type) , intent(inout) :: soilhydrology_inst
+     type(waterstate_type)    , intent(inout) :: waterstate_inst
+     type(waterflux_type)     , intent(inout) :: waterflux_inst
+     integer                  , intent(inout) :: jwt_c                ! index of the soil layer right above the water table
+     !
+     ! !LOCAL VARIABLES:
+     integer  :: j
+     integer  :: k_tile                                  ! soil layer containing the tile drain
+     real(r8) :: zwt_old                                 ! water table depth before tile drainage (m)
+     real(r8) :: tile_depth                              ! depth of the drain, no deeper than layer nbot (m)
+     real(r8) :: tile_head                               ! height of water table above tile drain (m)
+     real(r8) :: tile_tot                                ! tile drainage still to be removed (mm)
+     real(r8) :: tile_layer                              ! tile drainage removed from one layer (mm)
+     real(r8) :: tile_thick                              ! saturated thickness of layer between water table and drain (m)
+     real(r8) :: tile_dzwt                               ! deepening of the water table due to tile drainage (m)
+     real(r8) :: s_y                                     ! specific yield (-)
+     !-----------------------------------------------------------------------
+
+     associate(                                                            &
+          zi                 =>    col%zi                                , & ! Input:  [real(r8) (:,:) ] interface level below a "z" level (m)
+          tile_active        =>    col%tile_active                       , & ! Input:  [logical  (:)   ] true=>column has a tile drain
+          tile_rate          =>    col%tile_rate                         , & ! Input:  [real(r8) (:)   ] linear drain coefficient (mm/s per m of head)
+
+          bsw                =>    soilstate_inst%bsw_col                , & ! Input:  [real(r8) (:,:) ] Clapp and Hornberger "b"
+          sucsat             =>    soilstate_inst%sucsat_col             , & ! Input:  [real(r8) (:,:) ] minimum soil suction (mm)
+          watsat             =>    soilstate_inst%watsat_col             , & ! Input:  [real(r8) (:,:) ] volumetric soil water at saturation (porosity)
+
+          t_soisno           =>    temperature_inst%t_soisno_col         , & ! Input:  [real(r8) (:,:) ] soil temperature (Kelvin)
+
+          zwt                =>    soilhydrology_inst%zwt_col            , & ! Output: [real(r8) (:)   ] water table depth (m)
+
+          qflx_tile          =>    waterflux_inst%qflx_tile_col          , & ! Output: [real(r8) (:)   ] tile drainage, separate flux leaving as surface runoff (mm H2O /s)
+          qflx_tile_vr       =>    waterflux_inst%qflx_tile_vr_col       , & ! Output: [real(r8) (:,:) ] tile drainage removed from each layer (mm H2O /s)
+
+          h2osoi_liq         =>    waterstate_inst%h2osoi_liq_col          & ! Output: [real(r8) (:,:) ] liquid water (kg/m2)
+          )
+
+       if (.not. tile_active(c)) return
+
+       ! the drain cannot be deeper than the deepest layer water can leave from
+       tile_depth = min(col%tile_depth(c), zi(c,nbot))
+
+       ! layer containing the drain
+       k_tile = nbot
+       do j = 1, nbot
+          if (tile_depth <= zi(c,j)) then
+             k_tile = j
+             exit
+          end if
+       end do
+
+       tile_head = tile_depth - zwt(c)
+
+       ! no flow if the water table is below the drain or the drain layer is frozen
+       if (tile_head > 0._r8 .and. t_soisno(c,k_tile) > tfrz) then
+          tile_tot  = tile_rate(c) * tile_head * dtime   ! mm, positive
+          zwt_old   = zwt(c)
+          tile_dzwt = 0._r8
+
+          do j = k_tile, 1, -1
+             if (tile_tot <= 0._r8) exit
+             ! layer lies entirely above the water table: nothing drains from it
+             if (zi(c,j) <= zwt_old) exit
+
+             ! same analytical specific yield as the baseflow blocks
+             s_y = watsat(c,j) &
+                  * ( 1. - (1.+1.e3*zwt_old/sucsat(c,j))**(-1./bsw(c,j)))
+             s_y = max(s_y,0.02_r8)
+
+             ! saturated thickness between the water table and the drain in this layer
+             tile_thick = min(zi(c,j), tile_depth) - max(zi(c,j-1), zwt_old)
+
+             ! at most the drainable water in the layer, and at most what is above watmin
+             tile_layer = min(tile_tot, s_y*tile_thick*1.e3_r8)
+             tile_layer = min(tile_layer, h2osoi_liq(c,j) - watmin)
+             tile_layer = max(tile_layer, 0._r8)
+
+             h2osoi_liq(c,j)   = h2osoi_liq(c,j) - tile_layer
+             qflx_tile_vr(c,j) = tile_layer / dtime
+             qflx_tile(c)      = qflx_tile(c) + tile_layer / dtime
+             tile_tot          = tile_tot - tile_layer
+
+             ! deepen the water table with the same specific yield
+             tile_dzwt = tile_dzwt + tile_layer/s_y/1.e3_r8
+          end do
+
+          zwt(c) = zwt_old + tile_dzwt
+          zwt(c) = max(0.0_r8,zwt(c))
+          zwt(c) = min(80._r8,zwt(c))
+
+          ! recompute jwt for the deeper water table
+          jwt_c = nlevsoi
+          do j = 1,nlevsoi
+             if(zwt(c) <= zi(c,j)) then
+                jwt_c = j-1
+                exit
+             end if
+          enddo
+       end if
+
+     end associate
+
+   end subroutine TileDrainColumn
 
   !-----------------------------------------------------------------------
   subroutine CLMVICMap(bounds, numf, filter, &
@@ -2011,7 +2165,7 @@ contains
    !-----------------------------------------------------------------------
    subroutine LateralFlowPowerLaw(bounds, num_hydrologyc, filter_hydrologyc, &
         num_urbanc, filter_urbanc,soilhydrology_inst, soilstate_inst, &
-        waterstate_inst, waterflux_inst)
+        waterstate_inst, waterflux_inst, temperature_inst)
      !
      ! !DESCRIPTION:
      ! Calculate subsurface drainage
@@ -2020,6 +2174,7 @@ contains
      use clm_time_manager , only : get_step_size
      use clm_varpar       , only : nlevsoi, nlevgrnd, nlayer, nlayert
      use clm_varcon       , only : pondmx, watmin,rpi, secspday, nlvic
+     use clm_varctl       , only : use_tile_drain
      use column_varcon    , only : icol_roof, icol_road_imperv, icol_road_perv
      use abortutils       , only : endrun
      use GridcellType     , only : grc                
@@ -2031,6 +2186,7 @@ contains
      integer                  , intent(in)    :: num_urbanc           ! number of column urban points in column filter
      integer                  , intent(in)    :: filter_urbanc(:)     ! column filter for urban points
      integer                  , intent(in)    :: filter_hydrologyc(:) ! column filter for soil points
+     type(temperature_type)   , intent(in)    :: temperature_inst     ! used for the tile drain frozen check
      type(soilstate_type)     , intent(in)    :: soilstate_inst
      type(soilhydrology_type) , intent(inout) :: soilhydrology_inst
      type(waterstate_type)    , intent(inout) :: waterstate_inst
@@ -2117,6 +2273,8 @@ contains
           qflx_drain         =>    waterflux_inst%qflx_drain_col         , & ! Output: [real(r8) (:)   ] sub-surface runoff (mm H2O /s)                    
           qflx_qrgwl         =>    waterflux_inst%qflx_qrgwl_col         , & ! Output: [real(r8) (:)   ] qflx_surf at glaciers, wetlands, lakes (mm H2O /s)
           qflx_rsub_sat      =>    waterflux_inst%qflx_rsub_sat_col      , & ! Output: [real(r8) (:)   ] soil saturation excess [mm h2o/s]                 
+          qflx_tile          =>    waterflux_inst%qflx_tile_col          , & ! Output: [real(r8) (:)   ] tile drainage, separate flux leaving as surface runoff (mm H2O /s)
+          qflx_tile_vr       =>    waterflux_inst%qflx_tile_vr_col       , & ! Output: [real(r8) (:,:) ] tile drainage removed from each layer (mm H2O /s)  
           h2osoi_liq         =>    waterstate_inst%h2osoi_liq_col        , & ! Output: [real(r8) (:,:) ] liquid water (kg/m2)                            
           h2osoi_ice         =>    waterstate_inst%h2osoi_ice_col          & ! Output: [real(r8) (:,:) ] ice lens (kg/m2)                                
           )
@@ -2146,6 +2304,8 @@ contains
           qflx_rsub_sat(c) = 0._r8
           rsub_top(c)      = 0._r8
           fracice_rsub(c)  = 0._r8
+          qflx_tile(c)     = 0._r8
+          qflx_tile_vr(c,1:nlevsoi) = 0._r8
        end do
 
        ! The layer index of the first unsaturated layer, 
@@ -2221,6 +2381,15 @@ contains
           
           zwt(c) = max(0.0_r8,zwt(c))
           zwt(c) = min(80._r8,zwt(c))
+
+          ! Tile drain (see TileDrainColumn). Done after rsub_top has updated h2osoi_liq and zwt.
+          ! Water can only leave from layers down to bedrock, as for the baseflow above.
+          ! qflx_tile is NOT added to qflx_drain: it is a separate flux that leaves as surface
+          ! runoff (total runoff, Flrl_rofsur, and the nitrate runoff loss).
+          if (use_tile_drain) then
+             call TileDrainColumn(c, nbedrock(c), dtime, soilstate_inst, temperature_inst, &
+                  soilhydrology_inst, waterstate_inst, waterflux_inst, jwt(c))
+          end if
           
        end do
 
@@ -2312,7 +2481,8 @@ contains
        do fc = 1, num_hydrologyc
           c = filter_hydrologyc(fc)
 
-          ! Sub-surface runoff and drainage
+          ! Sub-surface runoff and drainage. Tile drainage (qflx_tile) is NOT part of
+          ! qflx_drain: it is a separate flux that leaves as surface runoff.
 
           qflx_drain(c) = qflx_rsub_sat(c) + rsub_top(c)
 

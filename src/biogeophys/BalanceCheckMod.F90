@@ -263,6 +263,7 @@ contains
           qflx_surf               =>    waterflux_inst%qflx_surf_col            , & ! Input:  [real(r8) (:)   ]  surface runoff (mm H2O /s)              
           qflx_qrgwl              =>    waterflux_inst%qflx_qrgwl_col           , & ! Input:  [real(r8) (:)   ]  qflx_surf at glaciers, wetlands, lakes  
           qflx_drain              =>    waterflux_inst%qflx_drain_col           , & ! Input:  [real(r8) (:)   ]  sub-surface runoff (mm H2O /s)          
+          qflx_tile               =>    waterflux_inst%qflx_tile_col            , & ! Input:  [real(r8) (:)   ]  tile drainage, leaves as surface runoff (mm H2O /s)
           qflx_runoff             =>    waterflux_inst%qflx_runoff_col          , & ! Input:  [real(r8) (:)   ]  total runoff (mm H2O /s)                
           qflx_ice_runoff_snwcp   =>    waterflux_inst%qflx_ice_runoff_snwcp_col, & ! Input:  [real(r8) (:)   ] solid runoff from snow capping (mm H2O /s)
           qflx_ice_runoff_xs      =>    waterflux_inst%qflx_ice_runoff_xs_col   , & ! Input:  [real(r8) (:)   ] solid runoff from excess ice in soil (mm H2O /s)
@@ -358,6 +359,7 @@ contains
                          - qflx_h2osfc_surf(c)      &
                          - qflx_qrgwl(c)            &
                          - qflx_drain(c)            &
+                         - qflx_tile(c)             &
                          - qflx_drain_perched(c)    &
                          - qflx_ice_runoff_snwcp(c) &
                          - qflx_ice_runoff_xs(c)    &
@@ -392,6 +394,7 @@ contains
                          - qflx_h2osfc_surf(c)      &
                          - qflx_qrgwl(c)            &
                          - qflx_drain(c)            &
+                         - qflx_tile(c)             &
                          - qflx_drain_perched(c)    &
                          - qflx_ice_runoff_snwcp(c) &
                          - qflx_ice_runoff_xs(c)    &
@@ -452,6 +455,7 @@ contains
              write(iulog,*)'qflx_h2osfc_surf           = ',qflx_h2osfc_surf(indexc)*dtime
              write(iulog,*)'qflx_qrgwl                 = ',qflx_qrgwl(indexc)*dtime
              write(iulog,*)'qflx_drain                 = ',qflx_drain(indexc)*dtime
+             write(iulog,*)'qflx_tile                  = ',qflx_tile(indexc)*dtime
              write(iulog,*)'qflx_drain_perched         = ',qflx_drain_perched(indexc)*dtime
              write(iulog,*)'qflx_flood                 = ',qflx_floodc(indexc)*dtime
              write(iulog,*)'qflx_ice_runoff_snwcp      = ',qflx_ice_runoff_snwcp(indexc)*dtime
@@ -491,6 +495,7 @@ contains
              write(iulog,*)'qflx_h2osfc_surf      = ',qflx_h2osfc_surf(indexc)*dtime
              write(iulog,*)'qflx_qrgwl            = ',qflx_qrgwl(indexc)*dtime
              write(iulog,*)'qflx_drain            = ',qflx_drain(indexc)*dtime
+             write(iulog,*)'qflx_tile             = ',qflx_tile(indexc)*dtime
              write(iulog,*)'qflx_ice_runoff_snwcp = ',qflx_ice_runoff_snwcp(indexc)*dtime
              write(iulog,*)'qflx_ice_runoff_xs    = ',qflx_ice_runoff_xs(indexc)*dtime
              write(iulog,*)'qflx_snwcp_discarded_ice = ',qflx_snwcp_discarded_ice(indexc)*dtime
@@ -500,7 +505,7 @@ contains
              write(iulog,*)'deltawb          = ',endwb(indexc)-begwb(indexc)
              write(iulog,*)'deltawb/dtime    = ',(endwb(indexc)-begwb(indexc))/dtime
              write(iulog,*)'deltaflux        = ',forc_rain_col(indexc)+forc_snow_col(indexc) - (qflx_evap_tot(indexc) + &
-                  qflx_surf(indexc)+qflx_h2osfc_surf(indexc)+qflx_drain(indexc))
+                  qflx_surf(indexc)+qflx_h2osfc_surf(indexc)+qflx_drain(indexc)+qflx_tile(indexc))
 
              write(iulog,*)'clm model is stopping'
              call endrun(decomp_index=indexc, clmlevel=namec, msg=errmsg(sourcefile, __LINE__))
@@ -530,6 +535,7 @@ contains
              write(iulog,*)'qflx_h2osfc_surf      = ',qflx_h2osfc_surf(indexc)*dtime
              write(iulog,*)'qflx_qrgwl            = ',qflx_qrgwl(indexc)*dtime
              write(iulog,*)'qflx_drain            = ',qflx_drain(indexc)*dtime
+             write(iulog,*)'qflx_tile             = ',qflx_tile(indexc)*dtime
              write(iulog,*)'qflx_drain_perched    = ',qflx_drain_perched(indexc)*dtime
              write(iulog,*)'qflx_flood            = ',qflx_floodc(indexc)*dtime
              write(iulog,*)'qflx_ice_runoff_snwcp = ',qflx_ice_runoff_snwcp(indexc)*dtime

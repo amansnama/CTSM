@@ -106,6 +106,7 @@ contains
          qflx_drain_perched => waterflux_inst%qflx_drain_perched_col , & ! sub-surface runoff from perched zwt (mm H2O /s)
          qflx_rsub_sat      => waterflux_inst%qflx_rsub_sat_col      , & ! soil saturation excess [mm h2o/s]  
          qflx_drain         => waterflux_inst%qflx_drain_col         , & ! sub-surface runoff (mm H2O /s) 
+         qflx_tile          => waterflux_inst%qflx_tile_col          , & ! tile drainage, leaves as surface runoff (mm H2O /s)
          qflx_surf          => waterflux_inst%qflx_surf_col          , & ! surface runoff (mm H2O /s)      
          qflx_infl          => waterflux_inst%qflx_infl_col          , & ! infiltration (mm H2O /s)   
          qflx_qrgwl         => waterflux_inst%qflx_qrgwl_col         , & ! qflx_surf at glaciers, wetlands, lakes
@@ -143,7 +144,7 @@ contains
          call LateralFlowPowerLaw(bounds, num_hydrologyc, filter_hydrologyc, &
               num_urbanc, filter_urbanc,&
               soilhydrology_inst, soilstate_inst, &
-              waterstate_inst, waterflux_inst)
+              waterstate_inst, waterflux_inst, temperature_inst)
 
       endif
 
@@ -206,7 +207,8 @@ contains
          c = filter_nolakec(fc)
          l = col%landunit(c)
 
-         qflx_runoff(c) = qflx_drain(c) + qflx_surf(c)  + qflx_h2osfc_surf(c) + qflx_qrgwl(c) + qflx_drain_perched(c)
+         qflx_runoff(c) = qflx_drain(c) + qflx_surf(c)  + qflx_h2osfc_surf(c) + qflx_qrgwl(c) + qflx_drain_perched(c) &
+              + qflx_tile(c)
 
          if ((lun%itype(l)==istsoil .or. lun%itype(l)==istcrop) .and. col%active(c)) then
             if (use_pumping == .true.) then

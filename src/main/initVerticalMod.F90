@@ -21,7 +21,8 @@ module initVerticalMod
   use clm_varctl        , only : use_fates
   use clm_varcon        , only : zlak, dzlak, zsoi, dzsoi, zisoi, dzsoi_decomp, spval, ispval, grlnd 
   use column_varcon     , only : icol_roof, icol_sunwall, icol_shadewall, is_hydrologically_active
-  use landunit_varcon   , only : istdlak, istice_mec
+  use landunit_varcon   , only : istdlak, istice_mec, istsoil, istcrop
+  use clm_varctl        , only : use_tile_drain, tile_drain_everywhere, tile_drain_depth, tile_drain_rate
   use fileutils         , only : getfil
   use LandunitType      , only : lun                
   use GridcellType      , only : grc                
@@ -125,6 +126,7 @@ contains
     real(r8) ,pointer     :: std (:)           ! read in - topo_std 
     real(r8) ,pointer     :: tslope (:)        ! read in - topo_slope
     real(r8) ,pointer     :: GWratio (:)       ! FFelfelani Comment: read in - USGS GW ratio
+    real(r8) ,pointer     :: tiledrain (:)     ! read in - TILE_DRAIN (>0.5 => tile drain present)
     real(r8)              :: slope0            ! temporary
     real(r8)              :: slopebeta         ! temporary
     real(r8)              :: slopemax          ! temporary
@@ -760,6 +762,49 @@ contains
       end do
     end if
     deallocate(GWratio)
+
+    !-----------------------------------------------
+    ! Tile drainage: where it is active (surface dataset), its depth and its rate.
+    ! Tile drainage is only applied on natural vegetation and crop columns. Wetland and land
+    ! ice columns recompute qflx_qrgwl from their own water balance after Drainage, which
+    ! would count water the tile had already removed a second time.
+    !-----------------------------------------------
+
+    col%tile_active(begc:endc) = .false.
+    col%tile_depth (begc:endc) = 0._r8
+    col%tile_rate  (begc:endc) = 0._r8
+
+    if (use_tile_drain) then
+       allocate(tiledrain(bounds%begg:bounds%endg))
+       if (tile_drain_everywhere) then
+          ! testing shortcut: no TILE_DRAIN on the surface dataset, every soil/crop column drains
+          tiledrain(:) = 1._r8
+          if (masterproc) write(iulog,*) 'tile_drain_everywhere: ignoring TILE_DRAIN; ', &
+               'tile drain placed on every soil and crop column'
+       else
+          call ncd_io(ncid=ncid, varname='TILE_DRAIN', flag='read', data=tiledrain, dim1name=grlnd, readvar=readvar)
+          if (.not. readvar) then
+             call shr_sys_abort(' ERROR: use_tile_drain is true but TILE_DRAIN is NOT on surfdata file'//&
+                  ' (set tile_drain_everywhere = .true. to drain every soil/crop column instead)'//&
+                  errMsg(sourcefile, __LINE__))
+          end if
+       end if
+       if (tile_drain_depth <= 0._r8 .or. tile_drain_rate < 0._r8) then
+          call shr_sys_abort(' ERROR: tile_drain_depth must be > 0 and tile_drain_rate >= 0'//&
+               errMsg(sourcefile, __LINE__))
+       end if
+       do c = begc,endc
+          l = col%landunit(c)
+          g = col%gridcell(c)
+          if ((lun%itype(l) == istsoil .or. lun%itype(l) == istcrop) .and. tiledrain(g) > 0.5_r8) then
+             col%tile_active(c) = .true.
+             ! the drain cannot be deeper than the bottom of the hydrologically active soil
+             col%tile_depth(c)  = min(tile_drain_depth, col%zi(c,nlevsoi))
+             col%tile_rate(c)   = tile_drain_rate
+          end if
+       end do
+       deallocate(tiledrain)
+    end if
 	
 	
     !-----------------------------------------------

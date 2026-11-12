@@ -1,0 +1,159 @@
+===============================================================
+Tag name:  clm5-TileDrain (uncommitted; on top of 9d390bf78, release-clm5.0.34 + clm5mosartN modifications)
+Originator(s):  amansnama
+Date: Wed Nov 11 23:06:55 MST 2026
+One-line Summary: Add a column-level linear tile drain that leaves as a separate flux, routed to MOSART as surface runoff, with its nitrate going to nitrate runoff
+
+Purpose of this version:
+------------------------
+
+Add tile drainage to CLM as a column flux, qflx_tile (mm H2O/s). Water is removed from the soil
+column in the subsurface drainage routines, and then leaves the land as SURFACE runoff:
+
+  - qflx_tile is a separate flux. It is NOT part of qflx_drain (still qflx_rsub_sat + rsub_top)
+    and NOT added to qflx_surf_col.
+  - total runoff: qflx_runoff = qflx_drain + qflx_surf + qflx_h2osfc_surf + qflx_qrgwl
+                                + qflx_drain_perched + qflx_tile
+  - coupler: qflx_rofliq_qsur_grc is the gridcell average of (qflx_surf + qflx_tile) and is sent
+    as Flrl_rofsur, so MOSART treats the tile water as surface input. Flrl_rofsub (from
+    qflx_drain) does not contain it.
+  - BalanceCheck subtracts qflx_tile (it is not in qflx_surf, qflx_h2osfc_surf or qflx_drain).
+  - Nitrate: the nitrate carried by the tile water is added to smin_no3_runoff_vr (exported as
+    Flrl_no3_runoff), taken only from the layers the tile removed water from, weighted by the
+    water removed from each layer. smin_no3_leached_vr is unchanged from release-clm5.0.34.
+  - qflx_tile is kept separate from qflx_surf_col on purpose: the existing surface nitrate loss
+    uses qflx_surf with a 5 cm mixing depth and would otherwise take the tile nitrate from the
+    top 5 cm instead of the drained layers.
+
+The tile drain is done in both subsurface drainage paths, in the same column loop as the
+baseflow and after rsub_top has updated h2osoi_liq and zwt:
+  - SoilHydrologyMod:Drainage            (TOPMODEL baseflow; lower_boundary_condition = bc_waterTable/bc_aquifer)
+  - SoilHydrologyMod:LateralFlowPowerLaw (default CLM5 and use_bedrock; lower_boundary_condition = bc_zero_flux)
+Both call one shared routine, TileDrainColumn.
+
+CTSM Master Tag This Corresponds To: N/A (branch clm5-TileDrain of release-clm5.0.34)
+
+Summary of changes:
+-------------------
+
+Issues fixed (include CTSM Issue #): None
+
+Science changes since: 9d390bf78
+  Linear tile drain, off by default (use_tile_drain = .false.):
+     qflx_tile = tile_rate * (tile_depth - zwt)  when zwt is above the drain (mm H2O/s)
+  - Water is removed from the saturated layers between the water table and the drain, starting
+    at the layer containing the drain and working upward. Each layer gives up no more than
+    h2osoi_liq - watmin, and no more than s_y*(saturated thickness above the drain). qflx_tile
+    is the water actually removed divided by dtime, so the watmin fixers (which adjust rsub_top
+    or qflx_rsub_sat only) never refill a layer the tile emptied and no water is created.
+  - zwt is deepened by (water removed)/s_y, with the same analytical specific yield used by
+    the TOPMODEL / power-law baseflow blocks, so baseflow does not stay high on top of the
+    tile flux. The s_y cap above also keeps zwt from going below the drain. jwt is recomputed.
+  - No tile flow if the layer containing the drain is frozen (t_soisno <= tfrz).
+  - The drain can be no deeper than the deepest layer water can leave from: nlevsoi in Drainage,
+    nbedrock(c) in LateralFlowPowerLaw.
+  - Tile drains are only placed on natural vegetation (istsoil) and crop (istcrop) columns.
+    Wetland and land ice columns recompute qflx_qrgwl from their own water balance after
+    Drainage, which would count the water the tile had already removed a second time.
+  - Tile water leaves as surface runoff (see above), and tile nitrate leaves as nitrate runoff
+    (use_nitrif_denitrif and use_vertsoilc): smin_no3_runoff_vr gets disn_conc*qflx_tile_vr(c,j)/dz
+    in addition to the existing surface-runoff term, before its existing limits. Identical to
+    the previous code when use_tile_drain is off.
+
+Software changes since: 9d390bf78
+  - SoilHydrologyMod: new private TileDrainColumn (shared by Drainage and LateralFlowPowerLaw);
+    both routines zero qflx_tile/qflx_tile_vr in their initial set. qflx_drain is unchanged.
+  - LateralFlowPowerLaw gets a new trailing argument, temperature_inst (frozen check); the one
+    call in HydrologyDrainageMod is updated.
+  - HydrologyDrainageMod: "+ qflx_tile(c)" added to the qflx_runoff sum.
+  - lnd2atmMod: qflx_rofliq_qsur_grc now averages qflx_surf_col + qflx_tile_col (new local
+    qflx_surf_tile_col; the tile term is only added on active columns).
+  - BalanceCheckMod: qflx_tile subtracted in both water-balance sums (default and Fan groundwater
+    schemes) and printed in the error diagnostics.
+  - WaterfluxType: new qflx_tile_col (col) and qflx_tile_vr_col (col,1:nlevsoi); both zeroed in
+    InitCold; qflx_tile_col written to history as QTILE (mm/s, same hist_addfld1d pattern as
+    QDRAI). qflx_tile_vr_col is not on history and not on restart (set every step in the
+    drainage routines before the nitrate leaching uses it).
+  - ColumnType: new col%tile_active (logical), col%tile_depth (m), col%tile_rate (mm/s per m of head).
+  - initVerticalMod: when use_tile_drain, read gridcell TILE_DRAIN from the surface dataset
+    (> 0.5 = tile drain present, same way GW_ratio/USGS_mean is read) and set the column
+    fields above on istsoil/istcrop columns. Aborts if TILE_DRAIN is missing from the
+    surface dataset, or if tile_drain_depth <= 0 or tile_drain_rate < 0. If
+    tile_drain_everywhere = .true., TILE_DRAIN is not read and every istsoil/istcrop column
+    gets a tile drain (testing shortcut, e.g. single point); a log line says so.
+  - clm_varctl, controlMod: new namelist items in clm_inparm, read and broadcast like irrigate,
+    and printed in the log when use_tile_drain is on.
+  - SoilBiogeochemNLeachingMod: reads qflx_tile_vr_col and adds the tile nitrate to
+    smin_no3_runoff_vr (see above).
+  - CLMBuildNamelist.pm: new setup_logic_tile_drain; namelist_definition_clm4_5.xml and
+    namelist_defaults_clm4_5.xml: new entries.
+
+Changes to User Interface since: 9d390bf78
+  New namelist items (group clm_inparm):
+     use_tile_drain    = .false. (default)  turn tile drainage on
+     tile_drain_everywhere = .false. (default)  if .true., ignore TILE_DRAIN on the surface
+                                       dataset and drain every soil and crop column (testing
+                                       only; leave .false. for production so that a missing
+                                       TILE_DRAIN aborts the run)
+     tile_drain_depth  = 1.0     (m)        depth of the drain below the surface
+     tile_drain_rate   = 5.0e-5  (mm H2O/s per m of water table above the drain)
+  tile_drain_depth and tile_drain_rate are placeholder defaults and should be set for the study.
+  New surface dataset variable (gridcell): TILE_DRAIN, required only when use_tile_drain = .true.
+  and tile_drain_everywhere = .false.
+  New history field: QTILE (mm/s). It is separate from QDRAI and QOVER, is a term of total runoff
+  (QRUNOFF), and is part of the surface runoff sent to the river model.
+
+Known limits:
+  - Tile nitrate runoff is only computed in the use_nitrif_denitrif + use_vertsoilc branch
+    (the only branch that computes smin_no3_runoff_vr). Without use_vertsoilc, or with
+    use_nitrif_denitrif off, tile water leaves but takes no nitrate.
+  - Linear drain only (no Hooghoudt).
+
+Testing:
+--------
+
+ NOT YET BUILT OR RUN. Only the namelist builder was syntax-checked (perl -c bld/CLMBuildNamelist.pm: OK).
+
+  build-namelist tests:  not run
+
+  unit-tests (components/clm/src):  not run
+
+  regular tests: not run
+     To do: build, then (1) use_tile_drain = .false. should be bit-for-bit with 9d390bf78;
+     (2) use_tile_drain = .true. with a TILE_DRAIN surface dataset, once with
+     bc_aquifer/bc_waterTable and once with the CLM5 default, checking BalanceCheck (water and N),
+     that Flrl_rofsub is unchanged by the tile, that Flrl_rofsur increases by the area-weighted
+     QTILE, and that Flrl_no3_runoff (not Flrl_no3_leached) picks up the tile nitrate.
+
+Summary of Answer changes:
+-------------------------
+
+Changes answers relative to baseline (9d390bf78): expected bit-for-bit with use_tile_drain = .false.
+(default); answers change where TILE_DRAIN is set and use_tile_drain = .true. (not yet verified).
+
+Detailed list of changes:
+------------------------
+
+Externals being used: No updates
+
+Pull Requests that document the changes (include PR ids): None
+
+List of files changed (git status against 9d390bf78):
+
+ M bld/CLMBuildNamelist.pm
+ M bld/namelist_files/namelist_defaults_clm4_5.xml
+ M bld/namelist_files/namelist_definition_clm4_5.xml
+ M src/biogeophys/BalanceCheckMod.F90
+ M src/biogeophys/HydrologyDrainageMod.F90
+ M src/biogeophys/SoilHydrologyMod.F90
+ M src/biogeophys/WaterfluxType.F90
+ M src/main/ColumnType.F90
+ M src/main/clm_varctl.F90
+ M src/main/controlMod.F90
+ M src/main/initVerticalMod.F90
+ M src/main/lnd2atmMod.F90
+ M src/soilbiogeochem/SoilBiogeochemNLeachingMod.F90
+?? doc/clm5-TileDrain_ChangeLog  (new file)
+
+===============================================================
+===============================================================

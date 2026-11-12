@@ -164,6 +164,7 @@ contains
     integer  :: c, l, g, nstep  ! indices
     real(r8) :: qflx_ice_runoff_col(bounds%begc:bounds%endc) ! total column-level ice runoff
     real(r8) :: qflx_adjusted_irrig_col(bounds%begc:bounds%endc) ! total column-level adjusted irrigation
+    real(r8) :: qflx_surf_tile_col(bounds%begc:bounds%endc) ! column-level surface runoff including tile drainage (mm H2O/s)
     real(r8) :: eflx_sh_ice_to_liq_grc(bounds%begg:bounds%endg) ! sensible heat flux generated from the ice to liquid conversion, averaged to gridcell
     real(r8), parameter :: amC   = 12.0_r8 ! Atomic mass number for Carbon
     real(r8), parameter :: amO   = 16.0_r8 ! Atomic mass number for Oxygen
@@ -326,8 +327,18 @@ contains
     ! lnd -> rof
     !----------------------------------------------------
 
+    ! Tile drainage is sent to the river model as surface runoff (Flrl_rofsur), so it is
+    ! averaged into qflx_rofliq_qsur_grc together with qflx_surf. It is deliberately not part
+    ! of qflx_drain_col, so it is not in qflx_rofliq_qsub_grc (Flrl_rofsub).
+    do c = bounds%begc, bounds%endc
+       qflx_surf_tile_col(c) = waterflux_inst%qflx_surf_col(c)
+       if (col%active(c)) then
+          qflx_surf_tile_col(c) = qflx_surf_tile_col(c) + waterflux_inst%qflx_tile_col(c)
+       end if
+    end do
+
     call c2g( bounds, &
-         waterflux_inst%qflx_surf_col (bounds%begc:bounds%endc), &
+         qflx_surf_tile_col (bounds%begc:bounds%endc), &
          lnd2atm_inst%qflx_rofliq_qsur_grc   (bounds%begg:bounds%endg), &
          c2l_scale_type= 'urbanf', l2g_scale_type='unity' )
 

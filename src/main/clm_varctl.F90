@@ -126,6 +126,14 @@ module clm_varctl
   ! do not irrigate by default
   logical, public :: irrigate = .false.            
 
+  ! tile drainage: off by default. Where it is active is set by TILE_DRAIN on the
+  ! surface dataset (column%tile_active); the depth and rate below are applied to those columns.
+  logical , public :: use_tile_drain   = .false.
+  ! if true, ignore TILE_DRAIN on the surface dataset and put a tile drain on every soil and crop column (for testing, e.g. single point)
+  logical , public :: tile_drain_everywhere = .false.
+  real(r8), public :: tile_drain_depth = 1.0_r8     ! depth of the tile drain below the surface (m)
+  real(r8), public :: tile_drain_rate  = 5.0e-5_r8  ! linear drain coefficient (mm H2O/s per m of water table above the drain)
+
   !----------------------------------------------------------
   ! Other subgrid logic
   !----------------------------------------------------------

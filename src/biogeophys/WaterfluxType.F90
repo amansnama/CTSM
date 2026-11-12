@@ -74,7 +74,9 @@ module WaterfluxType
      real(r8), pointer :: qflx_rootsoi_col         (:,:) ! col root and soil water exchange [mm H2O/s] [+ into root]
      real(r8), pointer :: qflx_infl_col            (:)   ! col infiltration (mm H2O /s)
      real(r8), pointer :: qflx_surf_col            (:)   ! col surface runoff (mm H2O /s)
-     real(r8), pointer :: qflx_drain_col           (:)   ! col sub-surface runoff (mm H2O /s)
+     real(r8), pointer :: qflx_drain_col           (:)   ! col sub-surface runoff (mm H2O /s); does not include qflx_tile_col
+     real(r8), pointer :: qflx_tile_col            (:)   ! col tile drainage (mm H2O /s); separate flux, leaves as surface runoff (not in qflx_drain_col or qflx_surf_col)
+     real(r8), pointer :: qflx_tile_vr_col         (:,:) ! col tile drainage removed from each soil layer (mm H2O /s); sums over layers to qflx_tile_col
      real(r8), pointer :: qflx_top_soil_col        (:)   ! col net water input into soil from top (mm/s)
      real(r8), pointer :: qflx_h2osfc_to_ice_col   (:)   ! col conversion of h2osfc to ice
      real(r8), pointer :: qflx_h2osfc_surf_col     (:)   ! col surface water runoff
@@ -217,6 +219,8 @@ contains
     allocate(this%qflx_infl_col            (begc:endc))              ; this%qflx_infl_col            (:)   = nan
     allocate(this%qflx_surf_col            (begc:endc))              ; this%qflx_surf_col            (:)   = nan
     allocate(this%qflx_drain_col           (begc:endc))              ; this%qflx_drain_col           (:)   = nan
+    allocate(this%qflx_tile_col            (begc:endc))              ; this%qflx_tile_col            (:)   = nan
+    allocate(this%qflx_tile_vr_col         (begc:endc,1:nlevsoi))    ; this%qflx_tile_vr_col         (:,:) = nan
     allocate(this%qflx_top_soil_col        (begc:endc))              ; this%qflx_top_soil_col        (:)   = nan
     allocate(this%qflx_h2osfc_to_ice_col   (begc:endc))              ; this%qflx_h2osfc_to_ice_col   (:)   = nan
     allocate(this%qflx_h2osfc_surf_col     (begc:endc))              ; this%qflx_h2osfc_surf_col     (:)   = nan
@@ -311,6 +315,11 @@ contains
     call hist_addfld1d (fname='QDRAI',  units='mm/s',  &
          avgflag='A', long_name='sub-surface drainage', &
          ptr_col=this%qflx_drain_col, c2l_scale_type='urbanf')
+
+    this%qflx_tile_col(begc:endc) = spval
+    call hist_addfld1d (fname='QTILE',  units='mm/s',  &
+         avgflag='A', long_name='tile drainage (separate from QDRAI and QOVER; sent to the river model as surface runoff)', &
+         ptr_col=this%qflx_tile_col, c2l_scale_type='urbanf')
 
     this%qflx_liq_dynbal_grc(begg:endg) = spval
     call hist_addfld1d (fname='QFLX_LIQ_DYNBAL',  units='mm/s',  &  
@@ -688,6 +697,11 @@ contains
     ! This variable only gets set in the hydrology filter; need to initialize it to 0 for
     ! the sake of columns outside this filter
     this%qflx_ice_runoff_xs_col(bounds%begc:bounds%endc) = 0._r8
+
+    ! Tile drainage is only computed in the hydrology filter (Drainage), and is read by
+    ! CNNLeaching for all soil columns; zero everywhere so other columns see no tile flux
+    this%qflx_tile_col(bounds%begc:bounds%endc)       = 0._r8
+    this%qflx_tile_vr_col(bounds%begc:bounds%endc,:)  = 0._r8
 
     ! needed for CNNLeaching 
     do c = bounds%begc, bounds%endc

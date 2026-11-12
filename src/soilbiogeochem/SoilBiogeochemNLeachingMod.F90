@@ -108,7 +108,8 @@ contains
     associate(                                                                             & 
          h2osoi_liq          => waterstate_inst%h2osoi_liq_col                           , & ! Input:  [real(r8) (:,:) ]  liquid water (kg/m2) (new) (-nlevsno+1:nlevgrnd)
 
-         qflx_drain          => waterflux_inst%qflx_drain_col                            , & ! Input:  [real(r8) (:)   ]  sub-surface runoff (mm H2O /s)                    
+         qflx_drain          => waterflux_inst%qflx_drain_col                            , & ! Input:  [real(r8) (:)   ]  sub-surface runoff (mm H2O /s), excludes qflx_tile
+         qflx_tile_vr        => waterflux_inst%qflx_tile_vr_col                          , & ! Input:  [real(r8) (:,:) ]  tile drainage (leaves as surface runoff) removed from each layer (mm H2O /s)
          qflx_surf           => waterflux_inst%qflx_surf_col                             , & ! Input:  [real(r8) (:)   ]  surface runoff (mm H2O /s)                        
          
          sminn_vr            => soilbiogeochem_nitrogenstate_inst%sminn_vr_col           , & ! Input:  [real(r8) (:,:) ]  (gN/m3) soil mineral N                          
@@ -240,7 +241,8 @@ contains
                   end if
                   !
                   ! calculate the N leaching flux as a function of the dissolved
-                  ! concentration and the sub-surface drainage flux
+                  ! concentration and the sub-surface drainage flux. Tile drainage is not part of
+                  ! qflx_drain, so it takes no nitrate here (see the runoff loss below).
                   smin_no3_leached_vr(c,j) = disn_conc * drain_tot(c) * h2osoi_liq(c,j) / ( tot_water(c) * col%dz(c,j) )
                   !
                   ! ensure that leaching rate isn't larger than soil N pool
@@ -261,6 +263,12 @@ contains
                   else
                      smin_no3_runoff_vr(c,j) = 0._r8
                   endif
+                  !
+                  ! add the N loss with tile drainage, which leaves as surface runoff. It is taken
+                  ! only from the layers the tile removed water from (at and above the drain), in
+                  ! proportion to the water removed from each layer (qflx_tile_vr is zero unless
+                  ! use_tile_drain, so this adds nothing otherwise)
+                  smin_no3_runoff_vr(c,j) = smin_no3_runoff_vr(c,j) + disn_conc * qflx_tile_vr(c,j) / col%dz(c,j)
                   !
                   ! ensure that runoff rate isn't larger than soil N pool
                   smin_no3_runoff_vr(c,j) = min(smin_no3_runoff_vr(c,j), smin_no3_vr(c,j) / dt - smin_no3_leached_vr(c,j))

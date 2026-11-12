@@ -119,6 +119,13 @@ attributes from the config_cache.xml file (with keys converted to upper-case).
 <irrigate use_crop=".true." >.false.</irrigate>
 <irrigate use_crop=".false.">.true.</irrigate>
 
+<!-- Tile drainage default: off -->
+<use_tile_drain>.false.</use_tile_drain>
+<tile_drain_everywhere>.false.</tile_drain_everywhere>
+<!-- Default tile depth 1.2m from https://doi.org/10.1029/2021WR031242 -->
+<tile_drain_depth>1.2d0</tile_drain_depth>
+<tile_drain_rate>5.0d-5</tile_drain_rate>
+
 
 <!-- MEGAN model -->
 <megan clm_accelerated_spinup="on" >0</megan>

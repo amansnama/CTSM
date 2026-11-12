@@ -56,6 +56,11 @@ module ColumnType
      real(r8), pointer :: bedrock_depth        (:)   ! FFelfelani Comment: column bedrock_depth
      real(r8), pointer :: topo_std             (:)   ! gridcell elevation standard deviation
 
+     ! tile drainage (set in initVerticalMod; only used if use_tile_drain)
+     logical , pointer :: tile_active          (:)   ! true=>this column has a tile drain
+     real(r8), pointer :: tile_depth           (:)   ! depth of tile drain below the surface (m)
+     real(r8), pointer :: tile_rate            (:)   ! linear tile drainage coefficient (mm H2O/s per m of water table above the drain)
+
      ! vertical levels
      integer , pointer :: snl                  (:)   ! number of snow layers
      real(r8), pointer :: dz                   (:,:) ! layer thickness (m)  (-nlevsno+1:nlevgrnd) 
@@ -134,6 +139,10 @@ contains
     allocate(this%bedrock_depth    (begc:endc))                ; this%bedrock_depth    (:)   = nan
     allocate(this%topo_std    (begc:endc))                     ; this%topo_std    (:)   = nan
 
+    allocate(this%tile_active (begc:endc))                     ; this%tile_active (:)   = .false.
+    allocate(this%tile_depth  (begc:endc))                     ; this%tile_depth  (:)   = nan
+    allocate(this%tile_rate   (begc:endc))                     ; this%tile_rate   (:)   = nan
+
     allocate(this%hydrologically_active(begc:endc))            ; this%hydrologically_active(:) = .false.
 
   end subroutine Init
@@ -169,6 +178,9 @@ contains
     deallocate(this%GW_ratio )
     deallocate(this%bedrock_depth )
     deallocate(this%topo_std   )
+    deallocate(this%tile_active)
+    deallocate(this%tile_depth )
+    deallocate(this%tile_rate  )
     deallocate(this%nbedrock   )
     deallocate(this%levgrnd_class)
     deallocate(this%hydrologically_active)

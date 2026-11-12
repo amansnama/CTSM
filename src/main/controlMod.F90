@@ -202,7 +202,8 @@ contains
          clump_pproc, wrtdia, &
          create_crop_landunit, nsegspc, co2_ppmv, override_nsrest, &
          albice, soil_layerstruct, subgridflag, &
-         irrigate, run_zero_weight_urban, all_active
+         irrigate, run_zero_weight_urban, all_active, &
+         use_tile_drain, tile_drain_everywhere, tile_drain_depth, tile_drain_rate
 
     ! vertical soil mixing variables
     namelist /clm_inparm/  &
@@ -609,6 +610,12 @@ contains
     ! Irrigation
     call mpi_bcast(irrigate, 1, MPI_LOGICAL, 0, mpicom, ier)
 
+    ! Tile drainage
+    call mpi_bcast(use_tile_drain  , 1, MPI_LOGICAL, 0, mpicom, ier)
+    call mpi_bcast(tile_drain_everywhere, 1, MPI_LOGICAL, 0, mpicom, ier)
+    call mpi_bcast(tile_drain_depth, 1, MPI_REAL8  , 0, mpicom, ier)
+    call mpi_bcast(tile_drain_rate , 1, MPI_REAL8  , 0, mpicom, ier)
+
     ! Landunit generation
     call mpi_bcast(create_crop_landunit, 1, MPI_LOGICAL, 0, mpicom, ier)
 
@@ -799,6 +806,12 @@ contains
     write(iulog,*) '    use_vertsoilc = ', use_vertsoilc
     write(iulog,*) '    use_extralakelayers = ', use_extralakelayers
     write(iulog,*) '    use_vichydro = ', use_vichydro
+    write(iulog,*) '    use_tile_drain = ', use_tile_drain
+    if (use_tile_drain) then
+       write(iulog,*) '    tile_drain_everywhere = ', tile_drain_everywhere
+       write(iulog,*) '    tile_drain_depth (m) = ', tile_drain_depth
+       write(iulog,*) '    tile_drain_rate (mm/s per m head) = ', tile_drain_rate
+    end if
     write(iulog,*) '    use_century_decomp = ', use_century_decomp
     write(iulog,*) '    use_cn = ', use_cn
     write(iulog,*) '    use_cndv = ', use_cndv
