@@ -478,6 +478,18 @@ surface dataset has no TILE_DRAIN variable. Used only if use_tile_drain is TRUE.
 for production runs, where a missing TILE_DRAIN aborts the run instead of draining everything.
 </entry>
 
+<entry id="tile_drain_scheme" type="char*16" category="clm_physics"
+       group="clm_inparm" valid_values="linear,hooghoudt" >
+Tile drainage discharge equation. Used only if use_tile_drain is TRUE.
+    linear    = q = tile_drain_rate * h, with h the water-table height above the drain (m)
+    hooghoudt = Hooghoudt (1940) as in Valayamkunnath et al. (2022, Water Resources Research,
+                doi:10.1029/2021WR031242): q = (8*K*de*h + 4*K*h^2) / L^2.
+                K is the thickness-weighted saturated conductivity of the saturated soil
+                between the water table and the impermeable depth. de is the equivalent
+                depth of Ritzema (1994), which replaces the depth from the drain to the
+                impermeable layer. L is tile_drain_spacing.
+</entry>
+
 <entry id="tile_drain_depth" type="real" category="clm_physics"
        group="clm_inparm"  >
 Depth of the tile drain below the surface (m). Used only if use_tile_drain is TRUE.
@@ -487,7 +499,31 @@ Limited to the bottom of the hydrologically active soil column.
 <entry id="tile_drain_rate" type="real" category="clm_physics"
        group="clm_inparm"  >
 Linear tile drainage coefficient (mm H2O/s per m of water table above the drain).
-Used only if use_tile_drain is TRUE.
+Used only if use_tile_drain is TRUE and tile_drain_scheme is linear.
+</entry>
+
+<entry id="tile_drain_spacing" type="real" category="clm_physics"
+       group="clm_inparm"  >
+Distance between tile drains, L (m). Used only if use_tile_drain is TRUE and
+tile_drain_scheme is hooghoudt. The default 30 m is the loam value in
+Valayamkunnath et al. (2022) Table S4. That table gives a spacing for each soil
+texture (10 m for clay to 60 m for sand); spacing was their most sensitive parameter.
+</entry>
+
+<entry id="tile_drain_radius" type="real" category="clm_physics"
+       group="clm_inparm"  >
+Tile drain radius, r (m). Used only if use_tile_drain is TRUE and tile_drain_scheme
+is hooghoudt. The default 0.07 m is Valayamkunnath et al. (2022) Table S4.
+</entry>
+
+<entry id="tile_drain_imperv_depth" type="real" category="clm_physics"
+       group="clm_inparm"  >
+Depth from the surface to the impermeable layer below the tile drain (m). Used only
+if use_tile_drain is TRUE and tile_drain_scheme is hooghoudt. The depth D in
+Hooghoudt's equation is this depth minus tile_drain_depth, and is also limited by
+the bottom of the hydrologically active soil column. The default 2 m is the
+Noah-MP/NWM soil-column depth in Valayamkunnath et al. (2022) Table S4, so with
+tile_drain_depth = 1.2 m the drain sits 0.8 m above the impermeable layer.
 </entry> 
 
 <entry id="maxpatch_glcmec" type="integer"  category="clm_physics"

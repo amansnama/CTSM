@@ -38,7 +38,8 @@ module SoilHydrologyMod
   public :: RenewCondensation    ! Misc. corrections
   !
   ! !PRIVATE MEMBER FUNCTIONS:
-  private :: TileDrainColumn     ! Linear tile drain for one column
+  private :: TileDrainColumn      ! Tile drain for one column (linear or Hooghoudt)
+  private :: HooghoudtEquivDepth  ! Hooghoudt equivalent depth (Ritzema 1994)
 
   !-----------------------------------------------------------------------
   real(r8), private :: baseflow_scalar = 1.e-2_r8
@@ -1563,8 +1564,14 @@ contains
        soilhydrology_inst, waterstate_inst, waterflux_inst, jwt_c)
      !
      ! !DESCRIPTION:
-     ! Linear tile drain for one column: qflx_tile = tile_rate * (height of the water
-     ! table above the drain).
+     ! Tile drain for one column. Two schemes, selected by tile_drain_scheme:
+     !   linear    qflx_tile = tile_rate * h
+     !   hooghoudt qflx_tile = (8*K*de*h + 4*K*h^2) / L^2
+     ! h is the height of the water table above the drain (m). The Hooghoudt form is
+     ! Hooghoudt (1940) with D replaced by the equivalent depth de (Moody 1967;
+     ! Ritzema 1994), as implemented by Valayamkunnath et al. (2022, WRR). K is the
+     ! thickness-weighted hksat (mm/s) of the saturated soil between the water table
+     ! and the impermeable depth, and L is the drain spacing.
      !
      ! Call this after the baseflow (rsub_top) has updated h2osoi_liq and zwt. Water is
      ! taken from the saturated layers between the water table and the drain, starting
@@ -1581,6 +1588,8 @@ contains
      ! !USES:
      use clm_varcon       , only : tfrz, watmin
      use clm_varpar       , only : nlevsoi
+     use clm_varctl       , only : tile_drain_scheme, tile_drain_spacing, tile_drain_radius
+     use clm_varctl       , only : tile_drain_imperv_depth
      !
      ! !ARGUMENTS:
      integer                  , intent(in)    :: c                    ! column index
@@ -1604,6 +1613,11 @@ contains
      real(r8) :: tile_thick                              ! saturated thickness of layer between water table and drain (m)
      real(r8) :: tile_dzwt                               ! deepening of the water table due to tile drainage (m)
      real(r8) :: s_y                                     ! specific yield (-)
+     real(r8) :: z_imp                                   ! depth to the impermeable layer used by Hooghoudt (m)
+     real(r8) :: z_top                                   ! top of a soil layer (m)
+     real(r8) :: k_lat                                   ! saturated-zone lateral conductivity (mm/s)
+     real(r8) :: k_thick                                 ! saturated thickness used to weight k_lat (m)
+     real(r8) :: de                                      ! Hooghoudt equivalent depth (m)
      !-----------------------------------------------------------------------
 
      associate(                                                            &
@@ -1612,6 +1626,7 @@ contains
           tile_rate          =>    col%tile_rate                         , & ! Input:  [real(r8) (:)   ] linear drain coefficient (mm/s per m of head)
 
           bsw                =>    soilstate_inst%bsw_col                , & ! Input:  [real(r8) (:,:) ] Clapp and Hornberger "b"
+          hksat              =>    soilstate_inst%hksat_col              , & ! Input:  [real(r8) (:,:) ] hydraulic conductivity at saturation (mm H2O /s)
           sucsat             =>    soilstate_inst%sucsat_col             , & ! Input:  [real(r8) (:,:) ] minimum soil suction (mm)
           watsat             =>    soilstate_inst%watsat_col             , & ! Input:  [real(r8) (:,:) ] volumetric soil water at saturation (porosity)
 
@@ -1643,7 +1658,35 @@ contains
 
        ! no flow if the water table is below the drain or the drain layer is frozen
        if (tile_head > 0._r8 .and. t_soisno(c,k_tile) > tfrz) then
-          tile_tot  = tile_rate(c) * tile_head * dtime   ! mm, positive
+          if (tile_drain_scheme == 'hooghoudt') then
+             ! impermeable depth is the shallower of the namelist depth and the bottom
+             ! of the hydrologically active column, and is never above the drain
+             z_imp = min(zi(c,nbot), tile_drain_imperv_depth)
+             z_imp = max(z_imp, tile_depth)
+
+             ! thickness-weighted hksat of the saturated soil from the water table
+             ! down to the impermeable depth (Valayamkunnath et al. 2022, SI eq. 23-24)
+             k_lat   = 0._r8
+             k_thick = 0._r8
+             do j = 1, nbot
+                z_top = zi(c,j-1)
+                tile_thick = min(zi(c,j), z_imp) - max(z_top, zwt(c))
+                if (tile_thick > 0._r8) then
+                   k_lat   = k_lat + hksat(c,j) * tile_thick
+                   k_thick = k_thick + tile_thick
+                end if
+             end do
+             if (k_thick > 0._r8) then
+                k_lat = k_lat / k_thick
+             end if
+
+             de = HooghoudtEquivDepth(tile_drain_spacing, tile_drain_radius, z_imp - tile_depth)
+             ! q in mm/s: hksat is mm/s and the depths are in m, so they cancel
+             tile_tot = (8._r8*k_lat*de*tile_head + 4._r8*k_lat*tile_head*tile_head) &
+                  / (tile_drain_spacing*tile_drain_spacing) * dtime
+          else
+             tile_tot = tile_rate(c) * tile_head * dtime   ! mm, positive
+          end if
           zwt_old   = zwt(c)
           tile_dzwt = 0._r8
 
@@ -1691,6 +1734,69 @@ contains
      end associate
 
    end subroutine TileDrainColumn
+
+  !-----------------------------------------------------------------------
+  real(r8) function HooghoudtEquivDepth(drain_spacing, drain_radius, depth_below_drain)
+     !
+     ! !DESCRIPTION:
+     ! Equivalent depth de (m) below the tile drain (Ritzema, 1994, the form used by
+     ! Valayamkunnath et al., 2022, SI eq. 25). de replaces the actual depth D from the
+     ! drain to the impermeable layer in Hooghoudt's equation, to account for the
+     ! convergence head loss near the drain.
+     !
+     !   x  = 2*pi*D/L
+     !   F  = pi^2/(4x) + ln(x/(2*pi))                  if x <= 0.5
+     !      = sum_{n=1,3,5,...} 4*exp(-2nx)/(n*(1-exp(-2nx)))   if x > 0.5
+     !   de = (pi*L/8) / (ln(L/(pi*r)) + F)
+     !
+     ! !USES:
+     use clm_varcon, only : rpi
+     !
+     ! !ARGUMENTS:
+     real(r8), intent(in) :: drain_spacing      ! L, distance between drains (m)
+     real(r8), intent(in) :: drain_radius       ! r, drain radius (m)
+     real(r8), intent(in) :: depth_below_drain  ! D, depth from the drain to the impermeable layer (m)
+     !
+     ! !LOCAL VARIABLES:
+     real(r8) :: x
+     real(r8) :: fx
+     real(r8) :: term
+     real(r8) :: denom
+     integer  :: n_odd
+     !-----------------------------------------------------------------------
+
+     HooghoudtEquivDepth = 0._r8
+     if (depth_below_drain <= 0._r8) return
+
+     x = 2._r8 * rpi * depth_below_drain / drain_spacing
+     ! D is only a few millimetres or less: the convergence correction is not meaningful
+     if (x < 1.e-4_r8) then
+        HooghoudtEquivDepth = depth_below_drain
+        return
+     end if
+     if (x <= 0.5_r8) then
+        fx = (rpi * rpi) / (4._r8 * x) + log(x / (2._r8 * rpi))
+     else
+        fx = 0._r8
+        do n_odd = 1, 41, 2
+           term = 4._r8 * exp(-2._r8 * real(n_odd,r8) * x) &
+                / (real(n_odd,r8) * (1._r8 - exp(-2._r8 * real(n_odd,r8) * x)))
+           fx = fx + term
+           if (term < 1.e-8_r8) exit
+        end do
+     end if
+
+     denom = log(drain_spacing / (rpi * drain_radius)) + fx
+     if (denom > 1.e-6_r8) then
+        HooghoudtEquivDepth = (rpi * drain_spacing / 8._r8) / denom
+     else
+        HooghoudtEquivDepth = depth_below_drain
+     end if
+     ! the equivalent depth cannot exceed the actual depth to the impermeable layer
+     HooghoudtEquivDepth = min(HooghoudtEquivDepth, depth_below_drain)
+     HooghoudtEquivDepth = max(HooghoudtEquivDepth, 0._r8)
+
+  end function HooghoudtEquivDepth
 
   !-----------------------------------------------------------------------
   subroutine CLMVICMap(bounds, numf, filter, &

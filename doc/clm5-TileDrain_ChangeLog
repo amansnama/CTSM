@@ -1,4 +1,98 @@
 ===============================================================
+Tag name:  clm5-TileDrain (uncommitted; on top of the linear tile-drain implementation)
+Originator(s):  amansnama
+Date: Thu Nov 12 13:57:12 MST 2026
+One-line Summary: Add the Hooghoudt tile drain as a namelist toggle beside the linear scheme
+
+Purpose of this version:
+------------------------
+
+tile_drain_scheme selects the discharge equation. Default is set to hooghoudt.
+
+  linear (default):
+     q = tile_drain_rate * h
+
+  hooghoudt (Hooghoudt 1940; Ritzema 1994; Valayamkunnath et al. 2022, WRR,
+  doi:10.1029/2021WR031242, main-text eq. 1 and Supporting Information S2.6):
+     q = (8*K*de*h + 4*K*h^2) / L^2
+     h  = height of the water table above the drain (m)
+     L  = tile_drain_spacing (m)
+     K  = thickness-weighted hksat (mm/s) of the saturated soil between the water
+          table and the impermeable depth
+     de = equivalent depth (m) that replaces the actual depth D from the drain down
+          to the impermeable layer, to account for convergence head loss at the pipe
+
+  Equivalent depth (Ritzema 1994, SI eq. 25; r = tile_drain_radius):
+     x = 2*pi*D/L
+     F = pi^2/(4x) + ln(x/(2*pi))                         if x <= 0.5
+       = sum_{n odd} 4*exp(-2*n*x) / (n*(1-exp(-2*n*x)))  if x > 0.5
+     de = (pi*L/8) / (ln(L/(pi*r)) + F), then limited to 0 <= de <= D
+     D = 0 (drain at the impermeable layer) gives de = 0, so only the 4*K*h^2/L^2 term.
+
+  D is min(tile_drain_imperv_depth, bottom of the hydrologically active column)
+  minus the drain depth, and is not allowed to be negative. The default impermeable
+  depth is 8.5 m, the CLM5 soil column depth, so a 1.2 m drain sits
+  7.3 m above it. Soil below 8.5 m does not enter K or D. Defaults for spacing (30 m,
+  the loam row) and radius (0.07 m) are Table S4 of the same paper. That table also
+  lists spacing by texture (10 m clay to 60 m sand); spacing is a single namelist
+  value here, not a texture lookup.
+
+  Water removal, the water-table update, the frozen-drain check, the runoff routing,
+  and the nitrate runoff are the same as the linear scheme. Only the requested
+  volume changes. Noah-MP instead strips water above field capacity from the top of
+  the column. That is not used here: CLM already has a water table, and the tile
+  nitrate has to come from the layers the drain actually empties. qflx_tile is still
+  the water actually removed divided by the timestep, so a Hooghoudt request larger
+  than the drainable water is cut back by the specific-yield and watmin limits.
+
+Summary of changes:
+-------------------
+
+Science changes:
+  - New scheme hooghoudt, off unless tile_drain_scheme = 'hooghoudt'.
+  - linear is bit-for-bit with the previous tile-drain code.
+
+Software changes:
+  - SoilHydrologyMod: TileDrainColumn branches on tile_drain_scheme. New private
+    HooghoudtEquivDepth. K is summed from hksat over the saturated thickness between
+    zwt and the impermeable depth.
+  - clm_varctl, controlMod: new namelist items, broadcast, checked (scheme must be
+    linear or hooghoudt; for hooghoudt, spacing, radius and impervious depth must be
+    positive and spacing > pi*radius), and printed in the log.
+  - initVerticalMod: tile_drain_rate >= 0 is required only for the linear scheme.
+    tile_drain_depth > 0 is still required for both.
+  - CLMBuildNamelist.pm, namelist_definition_clm4_5.xml, namelist_defaults_clm4_5.xml.
+
+Changes to User Interface:
+  New namelist items (group clm_inparm), used only if use_tile_drain = .true.:
+     tile_drain_scheme       = 'linear'   (or 'hooghoudt')
+     tile_drain_spacing      = 30.    (m)     Hooghoudt only
+     tile_drain_radius       = 0.07   (m)     Hooghoudt only
+     tile_drain_imperv_depth = 8.5    (m)     Hooghoudt only; depth from the surface
+  tile_drain_rate is now used only when tile_drain_scheme = 'linear'.
+  Example:
+     use_tile_drain = .true.
+     tile_drain_scheme = 'hooghoudt'
+     tile_drain_depth = 1.2
+     tile_drain_spacing = 20.
+     tile_drain_radius = 0.07
+     tile_drain_imperv_depth = 8.5
+
+Known limits:
+  - One spacing, radius and impervious depth for every drained column. Table S4 of
+    Valayamkunnath et al. (2022) varies spacing with soil texture; set the namelist
+    for the soil of the run.
+  - K is CLM hksat. There is no extra lateral-conductivity multiplier.
+  - No tile flow when the layer that contains the drain is frozen (unchanged).
+
+Testing:
+--------
+
+  perl -c bld/CLMBuildNamelist.pm: OK.
+  The model builds and runs.
+
+===============================================================
+===============================================================
 Tag name:  clm5-TileDrain (uncommitted; on top of 9d390bf78, release-clm5.0.34 + clm5mosartN modifications)
 Originator(s):  amansnama
 Date: Wed Nov 11 23:06:55 MST 2026
@@ -112,7 +206,7 @@ Known limits:
 Testing:
 --------
 
- NOT YET BUILT OR RUN. Only the namelist builder was syntax-checked (perl -c bld/CLMBuildNamelist.pm: OK).
+ BUILT and RAN.
 
   build-namelist tests:  not run
 

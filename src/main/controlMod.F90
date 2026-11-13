@@ -14,11 +14,12 @@ module controlMod
   use shr_nl_mod                       , only: shr_nl_find_group_name
   use shr_const_mod                    , only: SHR_CONST_CDAY
   use shr_log_mod                      , only: errMsg => shr_log_errMsg
+  use shr_string_mod                   , only: shr_string_toLower
   use abortutils                       , only: endrun
   use spmdMod                          , only: masterproc, mpicom
   use spmdMod                          , only: MPI_CHARACTER, MPI_INTEGER, MPI_LOGICAL, MPI_REAL8
   use decompMod                        , only: clump_pproc
-  use clm_varcon                       , only: h2osno_max, int_snow_max, n_melt_glcmec
+  use clm_varcon                       , only: h2osno_max, int_snow_max, n_melt_glcmec, rpi
   use clm_varpar                       , only: maxpatch_pft, maxpatch_glcmec, numrad, nlevsno
   use histFileMod                      , only: max_tapes, max_namlen 
   use histFileMod                      , only: hist_empty_htapes, hist_dov2xy, hist_avgflag_pertape, hist_type1d_pertape 
@@ -203,7 +204,9 @@ contains
          create_crop_landunit, nsegspc, co2_ppmv, override_nsrest, &
          albice, soil_layerstruct, subgridflag, &
          irrigate, run_zero_weight_urban, all_active, &
-         use_tile_drain, tile_drain_everywhere, tile_drain_depth, tile_drain_rate
+         use_tile_drain, tile_drain_everywhere, tile_drain_scheme, &
+         tile_drain_depth, tile_drain_rate, tile_drain_spacing, &
+         tile_drain_radius, tile_drain_imperv_depth
 
     ! vertical soil mixing variables
     namelist /clm_inparm/  &
@@ -499,6 +502,27 @@ contains
     ! consistency checks
     ! ----------------------------------------------------------------------
 
+    ! Tile drainage scheme
+    tile_drain_scheme = shr_string_toLower(trim(tile_drain_scheme))
+    if (tile_drain_scheme /= 'linear' .and. tile_drain_scheme /= 'hooghoudt') then
+       write(iulog,*)'tile_drain_scheme = ',trim(tile_drain_scheme),' is not supported'
+       call endrun(msg=' ERROR:: tile_drain_scheme must be linear or hooghoudt'//&
+            errMsg(sourcefile, __LINE__))
+    end if
+    if (use_tile_drain .and. tile_drain_scheme == 'hooghoudt') then
+       if (tile_drain_spacing <= 0._r8 .or. tile_drain_radius <= 0._r8 .or. &
+            tile_drain_imperv_depth <= 0._r8) then
+          call endrun(msg=' ERROR:: Hooghoudt tile drain needs tile_drain_spacing > 0, '//&
+               'tile_drain_radius > 0 and tile_drain_imperv_depth > 0'//&
+               errMsg(sourcefile, __LINE__))
+       end if
+       ! ln(L / (pi r)) in the equivalent-depth formula has to be defined and positive
+       if (tile_drain_spacing <= rpi * tile_drain_radius) then
+          call endrun(msg=' ERROR:: tile_drain_spacing must be greater than pi * tile_drain_radius'//&
+               errMsg(sourcefile, __LINE__))
+       end if
+    end if
+
     ! Consistency settings for co2 type
     if (co2_type /= 'constant' .and. co2_type /= 'prognostic' .and. co2_type /= 'diagnostic') then
        write(iulog,*)'co2_type = ',co2_type,' is not supported'
@@ -613,8 +637,12 @@ contains
     ! Tile drainage
     call mpi_bcast(use_tile_drain  , 1, MPI_LOGICAL, 0, mpicom, ier)
     call mpi_bcast(tile_drain_everywhere, 1, MPI_LOGICAL, 0, mpicom, ier)
+    call mpi_bcast(tile_drain_scheme, len(tile_drain_scheme), MPI_CHARACTER, 0, mpicom, ier)
     call mpi_bcast(tile_drain_depth, 1, MPI_REAL8  , 0, mpicom, ier)
     call mpi_bcast(tile_drain_rate , 1, MPI_REAL8  , 0, mpicom, ier)
+    call mpi_bcast(tile_drain_spacing, 1, MPI_REAL8, 0, mpicom, ier)
+    call mpi_bcast(tile_drain_radius , 1, MPI_REAL8, 0, mpicom, ier)
+    call mpi_bcast(tile_drain_imperv_depth, 1, MPI_REAL8, 0, mpicom, ier)
 
     ! Landunit generation
     call mpi_bcast(create_crop_landunit, 1, MPI_LOGICAL, 0, mpicom, ier)
@@ -809,8 +837,15 @@ contains
     write(iulog,*) '    use_tile_drain = ', use_tile_drain
     if (use_tile_drain) then
        write(iulog,*) '    tile_drain_everywhere = ', tile_drain_everywhere
+       write(iulog,*) '    tile_drain_scheme = ', trim(tile_drain_scheme)
        write(iulog,*) '    tile_drain_depth (m) = ', tile_drain_depth
-       write(iulog,*) '    tile_drain_rate (mm/s per m head) = ', tile_drain_rate
+       if (tile_drain_scheme == 'linear') then
+          write(iulog,*) '    tile_drain_rate (mm/s per m head) = ', tile_drain_rate
+       else
+          write(iulog,*) '    tile_drain_spacing (m) = ', tile_drain_spacing
+          write(iulog,*) '    tile_drain_radius (m) = ', tile_drain_radius
+          write(iulog,*) '    tile_drain_imperv_depth (m) = ', tile_drain_imperv_depth
+       end if
     end if
     write(iulog,*) '    use_century_decomp = ', use_century_decomp
     write(iulog,*) '    use_cn = ', use_cn

@@ -22,7 +22,8 @@ module initVerticalMod
   use clm_varcon        , only : zlak, dzlak, zsoi, dzsoi, zisoi, dzsoi_decomp, spval, ispval, grlnd 
   use column_varcon     , only : icol_roof, icol_sunwall, icol_shadewall, is_hydrologically_active
   use landunit_varcon   , only : istdlak, istice_mec, istsoil, istcrop
-  use clm_varctl        , only : use_tile_drain, tile_drain_everywhere, tile_drain_depth, tile_drain_rate
+  use clm_varctl        , only : use_tile_drain, tile_drain_everywhere, tile_drain_scheme
+  use clm_varctl        , only : tile_drain_depth, tile_drain_rate
   use fileutils         , only : getfil
   use LandunitType      , only : lun                
   use GridcellType      , only : grc                
@@ -789,8 +790,12 @@ contains
                   errMsg(sourcefile, __LINE__))
           end if
        end if
-       if (tile_drain_depth <= 0._r8 .or. tile_drain_rate < 0._r8) then
-          call shr_sys_abort(' ERROR: tile_drain_depth must be > 0 and tile_drain_rate >= 0'//&
+       if (tile_drain_depth <= 0._r8) then
+          call shr_sys_abort(' ERROR: tile_drain_depth must be > 0'//&
+               errMsg(sourcefile, __LINE__))
+       end if
+       if (tile_drain_scheme == 'linear' .and. tile_drain_rate < 0._r8) then
+          call shr_sys_abort(' ERROR: tile_drain_rate must be >= 0 for the linear tile drain'//&
                errMsg(sourcefile, __LINE__))
        end if
        do c = begc,endc
