@@ -133,6 +133,10 @@ module clm_varctl
   logical , public :: tile_drain_everywhere = .false.
   ! 'linear' (default) or 'hooghoudt' (Hooghoudt 1940, as in Valayamkunnath et al. 2022)
   character(len=16), public :: tile_drain_scheme = 'linear'
+  ! how tile drainage picks up nitrate (see SoilBiogeochemNLeachingMod):
+  ! 'bulk' (default) = bulk column dissolved NO3 concentration, like subsurface-drainage leaching;
+  ! 'layer' = only from the layers the tile removed water from (previous implementation)
+  character(len=16), public :: tile_no3_scheme = 'bulk'
   real(r8), public :: tile_drain_depth = 1.0_r8     ! depth of the tile drain below the surface (m)
   real(r8), public :: tile_drain_rate  = 5.0e-5_r8  ! linear drain coefficient (mm H2O/s per m of water table above the drain)
   ! Hooghoudt parameters. Defaults are the NWM/Noah-MP loam values in Valayamkunnath et al. (2022) Table S4.

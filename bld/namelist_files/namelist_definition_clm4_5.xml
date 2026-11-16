@@ -466,8 +466,21 @@ The tile flux is removed from the soil in SoilHydrologyMod (Drainage, or Lateral
 when no aquifer layer is used, which is the CLM5 default and the use_bedrock case) and added
 to the total runoff as a separate flux (qflx_tile, history field QTILE). It is not part of
 qflx_drain or qflx_surf. It is sent to the river model as surface runoff (Flrl_rofsur), and the
-nitrate it carries leaves as nitrate runoff (Flrl_no3_runoff), taken only from the layers the
-tile drained.
+nitrate it carries leaves as nitrate runoff (Flrl_no3_runoff). How the nitrate is picked up is
+set by tile_no3_scheme.
+</entry>
+
+<entry id="tile_no3_scheme" type="char*16" category="clm_physics"
+       group="clm_inparm" valid_values="bulk,layer" >
+How tile drainage picks up soil nitrate. Used only if use_tile_drain is TRUE and
+use_nitrif_denitrif and use_vertsoilc are on.
+    bulk  = the tile water carries the bulk dissolved NO3 concentration of the whole soil
+            column, like nitrate leached with subsurface drainage. Each layer loses its share
+            in proportion to its liquid water. CLM has no vertical nitrate transport, so the
+            deep layers where a tile sits hold almost no nitrate; this scheme lets the tile see
+            the nitrate in the whole column. Default.
+    layer = the previous implementation. Nitrate is taken only from the layers the tile removed
+            water from (at and above the drain), in proportion to the water removed from each.
 </entry>
 
 <entry id="tile_drain_everywhere" type="logical" category="clm_physics"

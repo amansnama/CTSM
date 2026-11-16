@@ -1,7 +1,96 @@
 ===============================================================
-Tag name:  clm5-TileDrain (uncommitted)
+Tag name:  clm5-TileDrain (on top of the separate tile and surface nitrate fields)
+Originator(s):  amansnama
+Date: Mon Nov 16 2026
+Commit: 
+One-line Summary: Take tile-drain nitrate at the bulk column concentration (default); keep the layer scheme as an option
+
+Purpose of this version:
+------------------------
+
+The tile nitrate was taken only from the layers the tile removed water from (at and
+above the drain), at each layer's own dissolved NO3 concentration. CLM has no vertical
+nitrate transport, so nitrate stays where it is made and is used up in the top of the
+soil. In a 1Pt run with a 7 m drain the nitrate at the drain depth was about 1e-19
+gN/m3 (6.8 gN/m3 at 1 cm), so SMIN_NO3_TILE was about 4.6e-22 gN/m2/yr (exactly 0 in
+many months) while QTILE was about 125 mm/yr and SMIN_NO3_SURF was 0.27 gN/m2/yr. The
+tile had no nitrate to remove, whatever its geometry or the fertilizer rate.
+
+tile_no3_scheme selects how the tile picks up nitrate. Default is bulk.
+
+  bulk (default):
+     The tile water carries the bulk dissolved NO3 concentration of the whole soil
+     column, in the same form as nitrate leached with subsurface drainage:
+        smin_no3_leached_vr = disn_conc * qflx_drain * h2osoi_liq / (tot_water * dz)
+        no3_tile            = disn_conc * qflx_tile  * h2osoi_liq / (tot_water * dz)
+     disn_conc = sf_no3 * smin_no3_vr * dz / h2osoi_liq (gN/kg water), tot_water is
+     the liquid water summed over nlevsoi, and qflx_tile is the column total (not
+     qflx_tile_vr). Each layer loses its share in proportion to its liquid water.
+     Summed over the column this is qflx_tile times the column-mean dissolved NO3.
+     The result is zero if qflx_tile is zero (no tile drain), or tot_water is zero.
+
+  layer (previous implementation):
+     no3_tile = disn_conc * qflx_tile_vr / dz. Taken only from the layers the tile
+     removed water from, in proportion to the water removed from each.
+
+  Unchanged for both: the same pool limit (runoff <= smin_no3_vr/dt minus leaching),
+  the same split into SMIN_NO3_TILE and SMIN_NO3_SURF with the cut taken from the
+  tile term first, SMIN_NO3_SURF + SMIN_NO3_TILE = SMIN_NO3_RUNOFF, and
+  Flrl_no3_runoff as the gridcell average of SMIN_NO3_RUNOFF. The tile water flux,
+  QTILE, QDRAI and all hydrology are unchanged.
+
+Summary of changes:
+-------------------
+
+Science changes:
+  - New default: tile_no3_scheme = 'bulk'. Runs that use tile drainage with
+    use_nitrif_denitrif and use_vertsoilc get a larger SMIN_NO3_TILE and
+    SMIN_NO3_RUNOFF, and so a smaller nitrate pool and a larger nitrate flux to the
+    river model, than with the previous code.
+  - 'layer' reproduces the previous tile nitrate. It is bit-for-bit with the
+    previous code, because only the one expression for no3_tile differs.
+  - Without use_tile_drain qflx_tile is zero, so there is no change for either value.
+  - With bulk, a layer can lose tile nitrate even if the tile removed no water
+    from it. SMIN_NO3_TILE_vr is therefore no longer a map of where the tile took
+    its water. The pool limit still keeps every layer non-negative.
+
+Software changes:
+  - SoilBiogeochemNLeachingMod: reads qflx_tile_col (column total) as well as
+    qflx_tile_vr_col. New local tile_no3_bulk set from tile_no3_scheme; no3_tile
+    follows the chosen scheme. Uses tile_no3_scheme from clm_varctl.
+  - clm_varctl: new tile_no3_scheme (character(len=16), default 'bulk').
+  - controlMod: new namelist item in clm_inparm, converted to lower case, checked
+    (must be bulk or layer), broadcast, and printed in the log when use_tile_drain
+    is true.
+  - CLMBuildNamelist.pm: adds the default whenever use_tile_drain is true.
+  - namelist_definition_clm4_5.xml (new entry, valid values bulk,layer, and the
+    QTILE entry no longer says the nitrate is taken only from the drained layers),
+    namelist_defaults_clm4_5.xml (bulk).
+
+Changes to User Interface:
+  New namelist item (group clm_inparm), used only if use_tile_drain = .true. and
+  use_nitrif_denitrif and use_vertsoilc are on:
+     tile_no3_scheme = 'bulk'    (or 'layer' for the previous behaviour)
+  A case built before this change has to be rebuilt and have preview_namelists run
+  again for the item to reach its namelist. To repeat an earlier run, add
+     tile_no3_scheme = 'layer'
+  to user_nl_clm.
+
+Testing: The XML files parse and CLMBuildNamelist.pm passes perl -c. Builds and runs.
+
+Known limits:
+  - bulk makes up for the lack of vertical nitrate transport; it does not add it.
+    The physically consistent fix is to move dissolved NO3 down with the water flux.
+  - bulk uses the whole column up to nlevsoi, not only the soil above the drain.
+  - No change for the non-vertically-resolved branch (use_vertsoilc = .false.),
+    which still sets the tile and surface nitrate to zero.
+
+===============================================================
+===============================================================
+Tag name:  clm5-TileDrain
 Originator(s):  amansnama
 Date: Fri Nov 13 2026
+Commit: 8b50efd548cc874bfcd79c16d9efd09f74d0b04e
 One-line Summary: Write tile-drain and surface-runoff nitrate to their own history fields
 
 Purpose of this version:
@@ -33,9 +122,10 @@ Testing: Builds and runs at 1Pt. All previous tests were also in 1Pt mode.
 
 ===============================================================
 ===============================================================
-Tag name:  clm5-TileDrain (uncommitted; on top of the linear tile-drain implementation)
+Tag name:  clm5-TileDrain (on top of the linear tile-drain implementation)
 Originator(s):  amansnama
 Date: Thu Nov 12 13:57:12 MST 2026
+Commit: baace16c88b13020c4e918056c78f78a2adc1f37
 One-line Summary: Add the Hooghoudt tile drain as a namelist toggle beside the linear scheme
 
 Purpose of this version:
@@ -127,9 +217,10 @@ Testing:
 
 ===============================================================
 ===============================================================
-Tag name:  clm5-TileDrain (uncommitted; on top of 9d390bf78, release-clm5.0.34 + clm5mosartN modifications)
+Tag name:  clm5-TileDrain (on top of 9d390bf78, release-clm5.0.34 + clm5mosartN modifications)
 Originator(s):  amansnama
 Date: Wed Nov 11 23:06:55 MST 2026
+Commit: 8146e772a79e2381a03d08565d0c7aad36c22ae2
 One-line Summary: Add a column-level linear tile drain that leaves as a separate flux, routed to MOSART as surface runoff, with its nitrate going to nitrate runoff
 
 Purpose of this version:

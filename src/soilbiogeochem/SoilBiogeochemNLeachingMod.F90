@@ -9,7 +9,7 @@ module SoilBiogeochemNLeachingMod
   use shr_kind_mod                    , only : r8 => shr_kind_r8
   use decompMod                       , only : bounds_type
   use clm_varcon                      , only : dzsoi_decomp, zisoi
-  use clm_varctl                      , only : use_nitrif_denitrif, use_vertsoilc
+  use clm_varctl                      , only : use_nitrif_denitrif, use_vertsoilc, tile_no3_scheme
   use SoilBiogeochemNitrogenStateType , only : soilbiogeochem_nitrogenstate_type
   use SoilBiogeochemNitrogenFluxType  , only : soilbiogeochem_nitrogenflux_type
   use WaterStateType                  , only : waterstate_type
@@ -101,6 +101,7 @@ contains
     real(r8) :: disn_conc                              ! dissolved mineral N concentration (gN/kg water)
     real(r8) :: no3_runoff_surf                        ! surface-runoff NO3 loss before the tile term (gN/m3/s)
     real(r8) :: no3_tile                               ! NO3 removed by tile drainage from this layer (gN/m3/s)
+    logical  :: tile_no3_bulk                          ! true: tile NO3 uses the bulk column concentration
     real(r8) :: tot_water(bounds%begc:bounds%endc)     ! total column liquid water (kg water/m2)
     real(r8) :: surface_water(bounds%begc:bounds%endc) ! liquid water to shallow surface depth (kg water/m2)
     real(r8) :: drain_tot(bounds%begc:bounds%endc)     ! total drainage flux (mm H2O /s)
@@ -111,6 +112,7 @@ contains
          h2osoi_liq          => waterstate_inst%h2osoi_liq_col                           , & ! Input:  [real(r8) (:,:) ]  liquid water (kg/m2) (new) (-nlevsno+1:nlevgrnd)
 
          qflx_drain          => waterflux_inst%qflx_drain_col                            , & ! Input:  [real(r8) (:)   ]  sub-surface runoff (mm H2O /s), excludes qflx_tile
+         qflx_tile           => waterflux_inst%qflx_tile_col                             , & ! Input:  [real(r8) (:)   ]  tile drainage, whole column (leaves as surface runoff) (mm H2O /s)
          qflx_tile_vr        => waterflux_inst%qflx_tile_vr_col                          , & ! Input:  [real(r8) (:,:) ]  tile drainage (leaves as surface runoff) removed from each layer (mm H2O /s)
          qflx_surf           => waterflux_inst%qflx_surf_col                             , & ! Input:  [real(r8) (:)   ]  surface runoff (mm H2O /s)                        
          
@@ -126,6 +128,10 @@ contains
 
       ! set time steps
       dt = real( get_step_size(), r8 )
+
+      ! how tile drainage picks up nitrate: bulk column concentration (default) or
+      ! only the layers the tile removed water from (previous implementation)
+      tile_no3_bulk = (trim(tile_no3_scheme) == 'bulk')
 
       if (.not. use_nitrif_denitrif) then
          ! set constant sf 
@@ -270,14 +276,30 @@ contains
                      smin_no3_runoff_vr(c,j) = 0._r8
                   endif
                   !
-                  ! add the N loss with tile drainage, which leaves as surface runoff. It is taken
-                  ! only from the layers the tile removed water from (at and above the drain), in
-                  ! proportion to the water removed from each layer (qflx_tile_vr is zero unless
-                  ! use_tile_drain, so this adds nothing otherwise). smin_no3_tile_vr keeps that
-                  ! contribution after the pool limit below, so SMIN_NO3_TILE is the part of
-                  ! SMIN_NO3_RUNOFF that came from the tile.
+                  ! add the N loss with tile drainage, which leaves as surface runoff.
+                  ! Two ways to get it, selected by tile_no3_scheme (both are zero unless
+                  ! use_tile_drain, since the tile water flux is zero otherwise):
+                  !   'bulk' (default): the same form as the subsurface-drainage leaching above.
+                  !      The tile water (qflx_tile, whole column) carries the bulk dissolved NO3
+                  !      concentration of the column, and each layer loses its share in
+                  !      proportion to its liquid water. CLM has no vertical nitrate transport,
+                  !      so the deep layers where the drain sits hold almost no nitrate; this
+                  !      lets the tile see the nitrate in the whole column.
+                  !   'layer' (previous implementation): taken only from the layers the tile
+                  !      removed water from (at and above the drain), in proportion to the water
+                  !      removed from each layer (qflx_tile_vr).
+                  ! smin_no3_tile_vr keeps that contribution after the pool limit below, so
+                  ! SMIN_NO3_TILE is the part of SMIN_NO3_RUNOFF that came from the tile.
                   no3_runoff_surf = smin_no3_runoff_vr(c,j)
-                  no3_tile = disn_conc * qflx_tile_vr(c,j) / col%dz(c,j)
+                  if (tile_no3_bulk) then
+                     no3_tile = 0._r8
+                     if (tot_water(c) > 0._r8) then
+                        no3_tile = disn_conc * qflx_tile(c) * &
+                             h2osoi_liq(c,j) / ( tot_water(c) * col%dz(c,j) )
+                     end if
+                  else
+                     no3_tile = disn_conc * qflx_tile_vr(c,j) / col%dz(c,j)
+                  end if
                   smin_no3_runoff_vr(c,j) = no3_runoff_surf + no3_tile
                   !
                   ! ensure that runoff rate isn't larger than soil N pool

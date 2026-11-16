@@ -206,7 +206,7 @@ contains
          irrigate, run_zero_weight_urban, all_active, &
          use_tile_drain, tile_drain_everywhere, tile_drain_scheme, &
          tile_drain_depth, tile_drain_rate, tile_drain_spacing, &
-         tile_drain_radius, tile_drain_imperv_depth
+         tile_drain_radius, tile_drain_imperv_depth, tile_no3_scheme
 
     ! vertical soil mixing variables
     namelist /clm_inparm/  &
@@ -509,6 +509,12 @@ contains
        call endrun(msg=' ERROR:: tile_drain_scheme must be linear or hooghoudt'//&
             errMsg(sourcefile, __LINE__))
     end if
+    tile_no3_scheme = shr_string_toLower(trim(tile_no3_scheme))
+    if (tile_no3_scheme /= 'bulk' .and. tile_no3_scheme /= 'layer') then
+       write(iulog,*)'tile_no3_scheme = ',trim(tile_no3_scheme),' is not supported'
+       call endrun(msg=' ERROR:: tile_no3_scheme must be bulk or layer'//&
+            errMsg(sourcefile, __LINE__))
+    end if
     if (use_tile_drain .and. tile_drain_scheme == 'hooghoudt') then
        if (tile_drain_spacing <= 0._r8 .or. tile_drain_radius <= 0._r8 .or. &
             tile_drain_imperv_depth <= 0._r8) then
@@ -638,6 +644,7 @@ contains
     call mpi_bcast(use_tile_drain  , 1, MPI_LOGICAL, 0, mpicom, ier)
     call mpi_bcast(tile_drain_everywhere, 1, MPI_LOGICAL, 0, mpicom, ier)
     call mpi_bcast(tile_drain_scheme, len(tile_drain_scheme), MPI_CHARACTER, 0, mpicom, ier)
+    call mpi_bcast(tile_no3_scheme, len(tile_no3_scheme), MPI_CHARACTER, 0, mpicom, ier)
     call mpi_bcast(tile_drain_depth, 1, MPI_REAL8  , 0, mpicom, ier)
     call mpi_bcast(tile_drain_rate , 1, MPI_REAL8  , 0, mpicom, ier)
     call mpi_bcast(tile_drain_spacing, 1, MPI_REAL8, 0, mpicom, ier)
@@ -838,6 +845,7 @@ contains
     if (use_tile_drain) then
        write(iulog,*) '    tile_drain_everywhere = ', tile_drain_everywhere
        write(iulog,*) '    tile_drain_scheme = ', trim(tile_drain_scheme)
+       write(iulog,*) '    tile_no3_scheme = ', trim(tile_no3_scheme)
        write(iulog,*) '    tile_drain_depth (m) = ', tile_drain_depth
        if (tile_drain_scheme == 'linear') then
           write(iulog,*) '    tile_drain_rate (mm/s per m head) = ', tile_drain_rate
