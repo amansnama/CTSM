@@ -1,4 +1,38 @@
 ===============================================================
+Tag name:  clm5-TileDrain (uncommitted)
+Originator(s):  amansnama
+Date: Fri Nov 13 2026
+One-line Summary: Write tile-drain and surface-runoff nitrate to their own history fields
+
+Purpose of this version:
+------------------------
+
+The nitrate carried by tile drainage was only recorded inside SMIN_NO3_RUNOFF, added
+to the surface-runoff term. It is now also stored on its own, without changing the
+runoff flux or the nitrate sent to the river model.
+
+  SMIN_NO3_LEACHED  follows QDRAI. Tile water is not in it.
+  SMIN_NO3_RUNOFF   is surface runoff (QOVER, top 5 cm) plus the tile term.
+  SMIN_NO3_SURF     is the surface-runoff part of SMIN_NO3_RUNOFF (no3_runoff_surf
+                    after the pool limit).
+  SMIN_NO3_TILE     is the tile part of SMIN_NO3_RUNOFF. If the pool limit cuts
+                    the sum, the cut is taken from the tile term first.
+  SMIN_NO3_SURF + SMIN_NO3_TILE = SMIN_NO3_RUNOFF. Flrl_no3_runoff is still the
+  gridcell average of SMIN_NO3_RUNOFF.
+
+Both new fields are on the primary history tape when use_nitrif_denitrif is true
+(gN/m^2/s). The _vr fields are registered but inactive. They are not new
+nitrogen-balance terms.
+
+Software changes:
+  SoilBiogeochemNitrogenFluxType: smin_no3_tile_vr_col, smin_no3_tile_col,
+  smin_no3_surf_vr_col, smin_no3_surf_col.
+  SoilBiogeochemNLeachingMod: both parts are saved after the runoff pool limit.
+
+Testing: Builds and runs at 1Pt. All previous tests were also in 1Pt mode.
+
+===============================================================
+===============================================================
 Tag name:  clm5-TileDrain (uncommitted; on top of the linear tile-drain implementation)
 Originator(s):  amansnama
 Date: Thu Nov 12 13:57:12 MST 2026
