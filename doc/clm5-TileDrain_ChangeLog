@@ -1,8 +1,49 @@
 ===============================================================
-Tag name:  clm5-TileDrain (on top of the separate tile and surface nitrate fields)
+Tag name:  clm5-TileDrain (tiled and untiled crop columns)
 Originator(s):  amansnama
 Date: Mon Nov 16 2026
 Commit: 
+One-line Summary: Split each crop into an untiled column and a tiled column using FTILE
+
+Purpose of this version:
+------------------------
+
+FTILE on the surface dataset is the fraction of the grid cell that is tile-drained
+(0 to 1, not a percent). The tiled share of the crop landunit is
+
+    f = min(1, FTILE / crop fraction of the grid cell)
+
+and each crop's columns are
+
+    untiled   ctype = 2*100 + cft    weight = wt_cft * (1-f)    tile off
+    tiled     ctype = 300 + cft      weight = wt_cft * f        tile on, full strength
+
+A column whose weight is zero is not created (f of 0 or 1). The two weights sum to
+the original wt_cft. Both patches keep the crop type and the full per-area fertilizer
+rate. Natural vegetation is not split and is not drained.
+
+TILE_DRAIN on the surface file is no longer read. tile_drain_everywhere still puts
+the drain on every soil and crop column. do_transient_crops with FTILE > 0 stops at
+startup; the dynamic-crop weight update still assumes one column per crop. pct_cft
+diagnostics still keep one patch per crop. Not compiled or run.
+
+Files:
+  src/main/clm_varsur.F90            ftile(:)
+  src/main/clm_initializeMod.F90     allocate and free ftile
+  src/main/surfrdMod.F90             read FTILE
+  src/main/subgridMod.F90            count one or two columns per crop
+  src/main/initGridCellsMod.F90      build the two columns
+  src/main/initVerticalMod.F90       tile_active from column type 300+cft
+  src/main/column_varcon.F90         300+cft helpers and history metadata
+  src/main/ColumnType.F90            column-type comment
+
+Builds and runs OK.
+
+===============================================================
+Tag name:  clm5-TileDrain (on top of the separate tile and surface nitrate fields)
+Originator(s):  amansnama
+Date: Mon Nov 16 2026
+Commit: 7df9799
 One-line Summary: Take tile-drain nitrate at the bulk column concentration (default); keep the layer scheme as an option
 
 Purpose of this version:
@@ -348,7 +389,7 @@ Summary of Answer changes:
 -------------------------
 
 Changes answers relative to baseline (9d390bf78): expected bit-for-bit with use_tile_drain = .false.
-(default); answers change where TILE_DRAIN is set and use_tile_drain = .true. (not yet verified).
+(default); answers change where TILE_DRAIN is set and use_tile_drain = .true.
 
 Detailed list of changes:
 ------------------------

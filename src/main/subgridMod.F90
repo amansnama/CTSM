@@ -15,7 +15,7 @@ module subgridMod
   use spmdMod        , only : masterproc
   use abortutils     , only : endrun
   use clm_varctl     , only : iulog
-  use clm_instur     , only : wt_lunit, wt_nat_patch, urban_valid, wt_cft
+  use clm_instur     , only : wt_lunit, wt_nat_patch, urban_valid, wt_cft, ftile
   use landunit_varcon, only : istcrop, istdlak, istwet, isturb_tbd, isturb_hd, isturb_md
   use glcBehaviorMod , only : glc_behavior_type
   use FatesInterfaceMod, only : fates_maxElementsPerSite
@@ -39,6 +39,9 @@ module subgridMod
   public :: subgrid_get_info_glacier_mec
   public :: subgrid_get_info_crop
   public :: crop_patch_exists ! returns true if the given crop patch should be created in memory
+  public :: crop_tile_fraction       ! fraction of the crop landunit that is tiled
+  public :: crop_make_untiled_column ! true when this grid cell needs the untiled crop column
+  public :: crop_make_tiled_column   ! true when this grid cell needs the tiled crop column
 
   ! !PRIVATE MEMBER FUNCTIONS:
   private :: subgrid_get_info_urban
@@ -488,7 +491,8 @@ contains
 
     do cft = cft_lb, cft_ub
        if (crop_patch_exists(gi, cft)) then
-          npatches = npatches + 1
+          if (crop_make_untiled_column(gi)) npatches = npatches + 1
+          if (crop_make_tiled_column(gi))   npatches = npatches + 1
        end if
     end do
 
@@ -558,6 +562,70 @@ contains
     end if
 
   end function crop_patch_exists
+
+  !-----------------------------------------------------------------------
+  function crop_tile_fraction(gi) result(f)
+    !
+    ! !DESCRIPTION:
+    ! Fraction of the crop landunit that is tile-drained in this grid cell.
+    !
+    ! ftile is the tiled fraction of the whole grid cell. Dividing by the crop
+    ! fraction of the grid cell spreads that area across crops in proportion to
+    ! wt_cft. The result is in [0,1]. Values within 1e-6 of 0 or 1 are snapped
+    ! to those ends so a zero-weight column is not created.
+    !
+    ! !ARGUMENTS:
+    real(r8) :: f
+    integer, intent(in) :: gi
+    !
+    ! !LOCAL VARIABLES:
+    real(r8), parameter :: tol = 1.e-6_r8
+
+    character(len=*), parameter :: subname = 'crop_tile_fraction'
+    !-----------------------------------------------------------------------
+
+    if (wt_lunit(gi, istcrop) > 0._r8) then
+       f = ftile(gi) / wt_lunit(gi, istcrop)
+    else
+       f = 0._r8
+    end if
+    f = min(1._r8, max(0._r8, f))
+    if (f < tol) f = 0._r8
+    if (f > 1._r8 - tol) f = 1._r8
+
+  end function crop_tile_fraction
+
+  !-----------------------------------------------------------------------
+  function crop_make_untiled_column(gi) result(make)
+    !
+    ! !DESCRIPTION:
+    ! True unless the whole crop landunit is tiled.
+    !
+    logical :: make
+    integer, intent(in) :: gi
+
+    character(len=*), parameter :: subname = 'crop_make_untiled_column'
+    !-----------------------------------------------------------------------
+
+    make = crop_tile_fraction(gi) < 1._r8
+
+  end function crop_make_untiled_column
+
+  !-----------------------------------------------------------------------
+  function crop_make_tiled_column(gi) result(make)
+    !
+    ! !DESCRIPTION:
+    ! True when any of the crop landunit is tiled.
+    !
+    logical :: make
+    integer, intent(in) :: gi
+
+    character(len=*), parameter :: subname = 'crop_make_tiled_column'
+    !-----------------------------------------------------------------------
+
+    make = crop_tile_fraction(gi) > 0._r8
+
+  end function crop_make_tiled_column
 
 
 

@@ -682,9 +682,10 @@ contains
     ! !USES:
     use clm_varctl      , only : create_crop_landunit, use_fates
     use clm_varpar      , only : natpft_lb, natpft_ub, natpft_size, cft_size, cft_lb
-    use clm_instur      , only : wt_lunit, wt_nat_patch, wt_cft, fert_cft
+    use clm_instur      , only : wt_lunit, wt_nat_patch, wt_cft, fert_cft, ftile
     use landunit_varcon , only : istsoil, istcrop
     use surfrdUtilsMod  , only : convert_cft_to_pft
+    use dynSubgridControlMod, only : get_do_transient_crops
     !
     ! !ARGUMENTS:
     implicit none
@@ -693,6 +694,8 @@ contains
     integer          ,intent(in)    :: ns     ! domain size
     !
     ! !LOCAL VARIABLES:
+    integer  :: g                                    ! gridcell index
+    logical  :: ftile_exceeds_crop                   ! FTILE larger than the crop fraction
     integer  :: dimid                                ! netCDF id's
     integer  :: cftsize                              ! size of CFT's
     logical  :: readvar                              ! is variable on dataset
@@ -762,6 +765,44 @@ contains
     wt_lunit(begg:endg,istcrop) = wt_lunit(begg:endg,istcrop) / 100._r8
     wt_nat_patch(begg:endg,:)   = wt_nat_patch(begg:endg,:) / 100._r8
     call check_sums_equal_1(wt_nat_patch, begg, 'wt_nat_patch', subname)
+
+    ! FTILE is the fraction of the grid cell that is tile-drained, not a percent.
+    ! Missing FTILE leaves every crop column untiled.
+    ftile(begg:endg) = 0._r8
+    call ncd_io(ncid=ncid, varname='FTILE', flag='read', data=ftile, &
+         dim1name=grlnd, readvar=readvar)
+    if (.not. readvar) then
+       if (masterproc) write(iulog,*) 'FTILE not on surfdata file; crop columns are not split'
+    else
+       ftile_exceeds_crop = .false.
+       do g = begg, endg
+          if (ftile(g) < 0._r8) then
+             if (ftile(g) > -1.e-8_r8) then
+                ftile(g) = 0._r8
+             else
+                write(iulog,*) 'ERROR: FTILE is a fraction of the grid cell and must be in [0,1]. g, FTILE = ', g, ftile(g)
+                call endrun(msg='ERROR: FTILE < 0'//errMsg(sourcefile, __LINE__))
+             end if
+          else if (ftile(g) > 1._r8) then
+             if (ftile(g) < 1._r8 + 1.e-5_r8) then
+                ftile(g) = 1._r8
+             else
+                write(iulog,*) 'ERROR: FTILE is a fraction of the grid cell and must be in [0,1], not a percent. g, FTILE = ', g, ftile(g)
+                call endrun(msg='ERROR: FTILE > 1'//errMsg(sourcefile, __LINE__))
+             end if
+          end if
+          if (wt_lunit(g,istcrop) > 0._r8 .and. ftile(g) > wt_lunit(g,istcrop) + 1.e-6_r8) then
+             ftile_exceeds_crop = .true.
+          end if
+       end do
+       if (ftile_exceeds_crop .and. masterproc) then
+          write(iulog,*) 'FTILE exceeds the crop fraction in one or more grid cells; tiled crop fraction capped at 1'
+       end if
+       if (get_do_transient_crops() .and. any(ftile(begg:endg) > 0._r8)) then
+          call endrun(msg='ERROR: FTILE > 0 is not supported with do_transient_crops'//errMsg(sourcefile, __LINE__))
+       end if
+       if (masterproc) write(iulog,*) 'Read FTILE as a fraction of the grid cell'
+    end if
 
     ! Collapse crop landunits down when prognostic crops are on
     if (use_crop) then

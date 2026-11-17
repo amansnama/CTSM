@@ -12,6 +12,8 @@ module ColumnType
   !   4  => (istice_mec)       land ice (multiple elevation classes)   
   !   5  => (istdlak)          deep lake
   !   6  => (istwet)           wetland
+  !   2*100+m =>               untiled crop column, m = cft
+  !   300+m   =>               tiled crop column, m = cft (still on the istcrop landunit)
   !   71 => (icol_roof)        urban roof
   !   72 => (icol_sunwall)     urban sunwall
   !   73 => (icol_shadewall)   urban shadewall

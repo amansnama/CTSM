@@ -32,7 +32,11 @@ module clm_instur
   ! for each cft on the crop landunit prescribe annual fertilizer
   ! landunit for all all grid cells, even  those without any crop)
   ! (second dimension goes cft_lb:cft_ub)
-  real(r8), pointer :: fert_cft(:,:)       
+  real(r8), pointer :: fert_cft(:,:)
+
+  ! fraction of the grid cell that is tile-drained (0 to 1), from FTILE on the
+  ! surface file. 0 where FTILE is absent. Not a percent.
+  real(r8), pointer :: ftile(:)
 
   ! for glc_mec landunits, weight of glacier in each elevation class (adds to 1.0 on the
   ! landunit for all grid cells, even those without any glacier)

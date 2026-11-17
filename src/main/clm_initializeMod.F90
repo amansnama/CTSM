@@ -14,7 +14,7 @@ module clm_initializeMod
   use clm_varctl      , only : iulog
   use clm_varctl      , only : use_lch4, use_cn, use_cndv, use_c13, use_c14, use_fates
   use clm_varctl      , only : use_soil_moisture_streams
-  use clm_instur      , only : wt_lunit, urban_valid, wt_nat_patch, wt_cft, fert_cft, wt_glc_mec, topo_glc_mec
+  use clm_instur      , only : wt_lunit, urban_valid, wt_nat_patch, wt_cft, fert_cft, ftile, wt_glc_mec, topo_glc_mec
   use perf_mod        , only : t_startf, t_stopf
   use readParamsMod   , only : readParameters
   use ncdio_pio       , only : file_desc_t
@@ -176,6 +176,8 @@ contains
     allocate (wt_nat_patch (begg:endg, natpft_lb:natpft_ub ))
     allocate (wt_cft       (begg:endg, cft_lb:cft_ub       ))
     allocate (fert_cft     (begg:endg, cft_lb:cft_ub       ))
+    allocate (ftile        (begg:endg                      ))
+    ftile(begg:endg) = 0._r8
     allocate (wt_glc_mec  (begg:endg, maxpatch_glcmec))
     allocate (topo_glc_mec(begg:endg, maxpatch_glcmec))
 
@@ -397,7 +399,7 @@ contains
     ! Some things are kept until the end of initialize2; urban_valid is kept through the
     ! end of the run for error checking.
 
-    deallocate (wt_lunit, wt_cft, wt_glc_mec)
+    deallocate (wt_lunit, wt_cft, ftile, wt_glc_mec)
 
     call t_stopf('clm_init1')
 
