@@ -59,6 +59,8 @@ module lnd2atmType
      real(r8), pointer :: fireztop_grc       (:)   => null() ! Wild Fire Emissions vertical distribution top
      real(r8), pointer :: ch4_surf_flux_tot_grc(:) => null() ! net CH4 flux (kg C/m**2/s) [+ to atm]
      ! lnd->rof
+     real(r8), pointer :: smin_no3_runoff_grc  (:)   => null() ! gridcell NO3 loss with runoff, including tile drainage (gN/m2/s)
+     real(r8), pointer :: smin_no3_leached_grc (:)   => null() ! gridcell NO3 loss with subsurface leaching (gN/m2/s)
 
    contains
 
@@ -153,6 +155,8 @@ contains
     allocate(this%fv_grc             (begg:endg))            ; this%fv_grc             (:)   =ival
     allocate(this%flxdst_grc         (begg:endg,1:ndst))     ; this%flxdst_grc         (:,:) =ival
     allocate(this%ch4_surf_flux_tot_grc(begg:endg))          ; this%ch4_surf_flux_tot_grc(:) =ival
+    allocate(this%smin_no3_runoff_grc  (begg:endg))          ; this%smin_no3_runoff_grc  (:) =ival
+    allocate(this%smin_no3_leached_grc (begg:endg))          ; this%smin_no3_leached_grc (:) =ival
 
     if (shr_megan_mechcomps_n>0) then
        allocate(this%flxvoc_grc(begg:endg,1:shr_megan_mechcomps_n));  this%flxvoc_grc(:,:)=ival

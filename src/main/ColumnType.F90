@@ -59,6 +59,11 @@ module ColumnType
      real(r8), pointer :: topo_std             (:)   ! gridcell elevation standard deviation
      real(r8), pointer :: GW_ratio             (:)   ! AmanS: FFelfelani added column USGS GW_ratio
 
+     ! tile drainage (set in initVerticalMod; only used if use_tile_drain)
+     logical , pointer :: tile_active          (:)   ! true=>this column has a tile drain
+     real(r8), pointer :: tile_depth           (:)   ! depth of tile drain below the surface (m)
+     real(r8), pointer :: tile_rate            (:)   ! linear tile drainage coefficient (mm H2O/s per m of water table above the drain)
+
      ! vertical levels
      integer , pointer :: snl                  (:)   ! number of snow layers
      real(r8), pointer :: dz                   (:,:) ! layer thickness (m)  (-nlevsno+1:nlevgrnd) 
@@ -164,6 +169,10 @@ contains
     ! AmanS: FFelfelani column USGS GW_ratio
     allocate(this%GW_ratio    (begc:endc))                     ; this%GW_ratio    (:)   = nan
 
+    allocate(this%tile_active (begc:endc))                     ; this%tile_active (:)   = .false.
+    allocate(this%tile_depth  (begc:endc))                     ; this%tile_depth  (:)   = nan
+    allocate(this%tile_rate   (begc:endc))                     ; this%tile_rate   (:)   = nan
+
   end subroutine Init
 
   !------------------------------------------------------------------------
@@ -212,6 +221,9 @@ contains
     deallocate(this%hill_aspect  )
     deallocate(this%urbpoi       )
     deallocate(this%GW_ratio     )
+    deallocate(this%tile_active  )
+    deallocate(this%tile_depth   )
+    deallocate(this%tile_rate    )
   end subroutine Clean
 
   !-----------------------------------------------------------------------

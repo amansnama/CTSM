@@ -82,6 +82,10 @@ module SoilBiogeochemNitrogenFluxType
      real(r8), pointer :: smin_no3_leached_col                      (:)     ! col soil mineral NO3 pool loss to leaching (gN/m2/s)
      real(r8), pointer :: smin_no3_runoff_vr_col                    (:,:)   ! col vertically-resolved rate of mineral NO3 loss with runoff (gN/m3/s)
      real(r8), pointer :: smin_no3_runoff_col                       (:)     ! col soil mineral NO3 pool loss to runoff (gN/m2/s)
+     real(r8), pointer :: smin_no3_tile_vr_col                      (:,:)   ! col vertically-resolved mineral NO3 loss with tile drainage (gN/m3/s); included in smin_no3_runoff
+     real(r8), pointer :: smin_no3_tile_col                         (:)     ! col soil mineral NO3 pool loss to tile drainage (gN/m2/s); included in smin_no3_runoff
+     real(r8), pointer :: smin_no3_surf_vr_col                      (:,:)   ! col vertically-resolved mineral NO3 loss with surface runoff (gN/m3/s); included in smin_no3_runoff
+     real(r8), pointer :: smin_no3_surf_col                         (:)     ! col soil mineral NO3 pool loss to surface runoff (gN/m2/s); included in smin_no3_runoff
 
      ! nitrification /denitrification diagnostic quantities
      real(r8), pointer :: smin_no3_massdens_vr_col                  (:,:)   ! col (ugN / g soil) soil nitrate concentration
@@ -211,6 +215,10 @@ contains
     allocate(this%smin_no3_leached_col              (begc:endc))                   ; this%smin_no3_leached_col       (:)   = nan
     allocate(this%smin_no3_runoff_vr_col            (begc:endc,1:nlevdecomp_full)) ; this%smin_no3_runoff_vr_col     (:,:) = nan
     allocate(this%smin_no3_runoff_col               (begc:endc))                   ; this%smin_no3_runoff_col        (:)   = nan
+    allocate(this%smin_no3_tile_vr_col              (begc:endc,1:nlevdecomp_full)) ; this%smin_no3_tile_vr_col       (:,:) = nan
+    allocate(this%smin_no3_tile_col                 (begc:endc))                   ; this%smin_no3_tile_col          (:)   = nan
+    allocate(this%smin_no3_surf_vr_col              (begc:endc,1:nlevdecomp_full)) ; this%smin_no3_surf_vr_col       (:,:) = nan
+    allocate(this%smin_no3_surf_col                 (begc:endc))                   ; this%smin_no3_surf_col          (:)   = nan
     allocate(this%pot_f_nit_vr_col                  (begc:endc,1:nlevdecomp_full)) ; this%pot_f_nit_vr_col           (:,:) = nan
     allocate(this%pot_f_nit_col                     (begc:endc))                   ; this%pot_f_nit_col              (:)   = nan
     allocate(this%pot_f_denit_vr_col                (begc:endc,1:nlevdecomp_full)) ; this%pot_f_denit_vr_col         (:,:) = nan
@@ -554,6 +562,20 @@ contains
             avgflag='A', long_name='soil NO3 pool loss to runoff', &
             ptr_col=this%smin_no3_runoff_col)
     end if
+
+    if (use_nitrif_denitrif) then
+       this%smin_no3_tile_col(begc:endc) = spval
+       call hist_addfld1d (fname='SMIN_NO3_TILE', units='gN/m^2/s', &
+            avgflag='A', long_name='soil NO3 pool loss to tile drainage (included in SMIN_NO3_RUNOFF)', &
+            ptr_col=this%smin_no3_tile_col)
+    end if
+
+    if (use_nitrif_denitrif) then
+       this%smin_no3_surf_col(begc:endc) = spval
+       call hist_addfld1d (fname='SMIN_NO3_SURF', units='gN/m^2/s', &
+            avgflag='A', long_name='soil NO3 pool loss to surface runoff, QOVER, top 5 cm (included in SMIN_NO3_RUNOFF)', &
+            ptr_col=this%smin_no3_surf_col)
+    end if
        
     if (use_nitrif_denitrif .and.  nlevdecomp_full > 1 ) then 
        this%f_nit_vr_col(begc:endc,:) = spval
@@ -595,6 +617,20 @@ contains
        call hist_addfld_decomp (fname='SMIN_NO3_RUNOFF'//trim(vr_suffix), units='gN/m^3/s', type2d='levdcmp', &
             avgflag='A', long_name='soil NO3 pool loss to runoff', &
             ptr_col=this%smin_no3_runoff_vr_col, default='inactive')
+    endif
+
+    if (use_nitrif_denitrif .and.  nlevdecomp_full > 1 ) then
+       this%smin_no3_tile_vr_col(begc:endc,:) = spval
+       call hist_addfld_decomp (fname='SMIN_NO3_TILE'//trim(vr_suffix), units='gN/m^3/s', type2d='levdcmp', &
+            avgflag='A', long_name='soil NO3 pool loss to tile drainage (included in SMIN_NO3_RUNOFF)', &
+            ptr_col=this%smin_no3_tile_vr_col, default='inactive')
+    endif
+
+    if (use_nitrif_denitrif .and.  nlevdecomp_full > 1 ) then
+       this%smin_no3_surf_vr_col(begc:endc,:) = spval
+       call hist_addfld_decomp (fname='SMIN_NO3_SURF'//trim(vr_suffix), units='gN/m^3/s', type2d='levdcmp', &
+            avgflag='A', long_name='soil NO3 pool loss to surface runoff (included in SMIN_NO3_RUNOFF)', &
+            ptr_col=this%smin_no3_surf_vr_col, default='inactive')
     endif
 
     if (use_nitrif_denitrif) then
@@ -923,7 +959,9 @@ contains
              this%f_nit_vr_col(i,j)                      = value_column
              this%f_denit_vr_col(i,j)                    = value_column
              this%smin_no3_leached_vr_col(i,j)           = value_column
-             this%smin_no3_runoff_vr_col(i,j)            = value_column 
+             this%smin_no3_runoff_vr_col(i,j)            = value_column
+             this%smin_no3_tile_vr_col(i,j)              = value_column
+             this%smin_no3_surf_vr_col(i,j)              = value_column 
              this%n2_n2o_ratio_denit_vr_col(i,j)         = value_column
              this%pot_f_nit_vr_col(i,j)                  = value_column
              this%pot_f_denit_vr_col(i,j)                = value_column
@@ -990,6 +1028,8 @@ contains
           this%f_n2o_nit_col(i)              = value_column
           this%smin_no3_leached_col(i)       = value_column
           this%smin_no3_runoff_col(i)        = value_column
+          this%smin_no3_tile_col(i)          = value_column
+          this%smin_no3_surf_col(i)          = value_column
        else
           this%sminn_to_denit_excess_col(i)  = value_column
           this%sminn_leached_col(i)          = value_column
@@ -1180,6 +1220,14 @@ contains
              this%smin_no3_runoff_col(c) = &
                   this%smin_no3_runoff_col(c) + &
                   this%smin_no3_runoff_vr_col(c,j) * dzsoi_decomp(j)
+
+             this%smin_no3_tile_col(c) = &
+                  this%smin_no3_tile_col(c) + &
+                  this%smin_no3_tile_vr_col(c,j) * dzsoi_decomp(j)
+
+             this%smin_no3_surf_col(c) = &
+                  this%smin_no3_surf_col(c) + &
+                  this%smin_no3_surf_vr_col(c,j) * dzsoi_decomp(j)
 
           end do
        end do

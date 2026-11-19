@@ -135,6 +135,19 @@ attributes from the config_cache.xml file (with keys converted to upper-case).
 
 <irrigate >.false.</irrigate>
 
+<!-- Tile drainage default: off. Hooghoudt defaults are the loam row of
+     Valayamkunnath et al. (2022) Table S4, https://doi.org/10.1029/2021WR031242 -->
+<use_tile_drain>.false.</use_tile_drain>
+<tile_drain_everywhere>.false.</tile_drain_everywhere>
+<tile_drain_scheme>hooghoudt</tile_drain_scheme>
+<tile_no3_scheme>bulk</tile_no3_scheme>
+<!-- Default tile depth 1.2m from https://doi.org/10.1029/2021WR031242 -->
+<tile_drain_depth>1.2d0</tile_drain_depth>
+<tile_drain_rate>5.0d-5</tile_drain_rate>
+<tile_drain_spacing>30.d0</tile_drain_spacing>
+<tile_drain_radius>0.07d0</tile_drain_radius>
+<!-- Default set to lowest bedrock depth in CLM5 -->
+<tile_drain_imperv_depth>8.5d0</tile_drain_imperv_depth>
 
 <!-- Saturation excess runoff for crops  -->
 <crop_fsat_equals_zero>.false.</crop_fsat_equals_zero>

@@ -12,7 +12,7 @@ module lnd2atmMod
   use shr_fire_emis_mod    , only : shr_fire_emis_mechcomps_n
   use clm_varpar           , only : numrad, ndst, nlevgrnd, nlevmaxurbgrnd !ndst = number of dust bins.
   use clm_varcon           , only : rair, grav, cpair, hfus, tfrz, spval
-  use clm_varctl           , only : iulog, use_lch4
+  use clm_varctl           , only : iulog, use_lch4, use_cn, use_fates, use_nitrif_denitrif
   use shr_drydep_mod       , only : n_drydep
   use decompMod            , only : bounds_type
   use subgridAveMod        , only : p2g, c2g, l2g
@@ -37,6 +37,7 @@ module lnd2atmMod
   use LandunitType         , only : lun
   use GridcellType         , only : grc
   use landunit_varcon      , only : istice
+  use SoilBiogeochemNitrogenFluxType, only : soilbiogeochem_nitrogenflux_type
   !
   ! !PUBLIC TYPES:
   implicit none
@@ -151,7 +152,7 @@ contains
        water_inst, &
        energyflux_inst, solarabs_inst, drydepvel_inst,  &
        vocemis_inst, fireemis_inst, dust_inst, ch4_inst, glc_behavior, &
-       lnd2atm_inst, &
+       lnd2atm_inst, soilbiogeochem_nitrogenflux_inst, &
        net_carbon_exchange_grc)
     !
     ! !DESCRIPTION:
@@ -177,12 +178,14 @@ contains
     type(ch4_type)              , intent(in)    :: ch4_inst
     type(glc_behavior_type)     , intent(in)    :: glc_behavior
     type(lnd2atm_type)          , intent(inout) :: lnd2atm_inst
+    type(soilbiogeochem_nitrogenflux_type), intent(in) :: soilbiogeochem_nitrogenflux_inst
     real(r8)                    , intent(in)    :: net_carbon_exchange_grc( bounds%begg: )  ! net carbon exchange between land and atmosphere, positive for source (gC/m2/s)
     !
     ! !LOCAL VARIABLES:
     integer  :: c, l, g  ! indices
     real(r8) :: eflx_sh_ice_to_liq_grc(bounds%begg:bounds%endg) ! sensible heat flux generated from the ice to liquid conversion, averaged to gridcell
     real(r8), allocatable :: qflx_surf_col_to_rof(:)          ! surface runoff that is sent directly to rof
+    real(r8), allocatable :: qflx_surf_tile_col(:)            ! surface runoff plus tile drainage sent as Flrl_rofsur
     real(r8), allocatable :: qflx_drain_col_to_rof(:)         ! drainagec that is sent directly to rof
     real(r8), allocatable :: qflx_drain_perched_col_to_rof(:) ! perched drainage that is sent directly to rof
     real(r8), parameter :: amC   = 12.0_r8 ! Atomic mass number for Carbon
@@ -368,8 +371,10 @@ contains
           ! hillslope runoff is sent to stream rather than directly
           ! to rof, and is accounted for in qflx_rofliq_stream_grc
           if (col%active(c) .and. .not. col%is_hillslope_column(c)) then
+             ! Tile drainage leaves as surface runoff and is not part of qflx_drain.
              qflx_surf_col_to_rof(c) = qflx_surf_col_to_rof(c) &
-                  + water_inst%waterfluxbulk_inst%qflx_surf_col(c)
+                  + water_inst%waterfluxbulk_inst%qflx_surf_col(c) &
+                  + water_inst%waterfluxbulk_inst%qflx_tile_col(c)
              qflx_drain_col_to_rof(c) = qflx_drain_col_to_rof(c) &
                   + water_inst%waterfluxbulk_inst%qflx_drain_col(c)
              qflx_drain_perched_col_to_rof(c) = &
@@ -397,11 +402,22 @@ contains
             qflx_drain_perched_col_to_rof)
 
     else
-    
+
+       ! Tile drainage is sent to the river model as surface runoff (Flrl_rofsur).
+       ! It is deliberately not part of qflx_drain_col, so it is not in Flrl_rofsub.
+       allocate(qflx_surf_tile_col(bounds%begc:bounds%endc))
+       do c = bounds%begc, bounds%endc
+          qflx_surf_tile_col(c) = water_inst%waterfluxbulk_inst%qflx_surf_col(c)
+          if (col%active(c)) then
+             qflx_surf_tile_col(c) = qflx_surf_tile_col(c) + water_inst%waterfluxbulk_inst%qflx_tile_col(c)
+          end if
+       end do
+
        call c2g( bounds, &
-            water_inst%waterfluxbulk_inst%qflx_surf_col (bounds%begc:bounds%endc), &
+            qflx_surf_tile_col (bounds%begc:bounds%endc), &
             water_inst%waterlnd2atmbulk_inst%qflx_rofliq_qsur_grc   (bounds%begg:bounds%endg), &
             c2l_scale_type= 'urbanf', l2g_scale_type='unity' )
+       deallocate(qflx_surf_tile_col)
        
        call c2g( bounds, &
             water_inst%waterfluxbulk_inst%qflx_drain_col (bounds%begc:bounds%endc), &
@@ -456,6 +472,23 @@ contains
          water_inst%waterfluxbulk_inst%qflx_sfc_irrig_col (bounds%begc:bounds%endc), &
          water_inst%waterlnd2atmbulk_inst%qirrig_grc(bounds%begg:bounds%endg), &
          c2l_scale_type= 'urbanf', l2g_scale_type='unity' )
+
+    ! Nitrate the river model receives. SMIN_NO3_RUNOFF already includes the tile term.
+    ! Pointers exist only when the nitrogen flux type was initialized.
+    if ((use_cn .or. use_fates) .and. use_nitrif_denitrif .and. &
+         associated(soilbiogeochem_nitrogenflux_inst%smin_no3_runoff_col)) then
+       call c2g( bounds, &
+            soilbiogeochem_nitrogenflux_inst%smin_no3_runoff_col(bounds%begc:bounds%endc), &
+            lnd2atm_inst%smin_no3_runoff_grc(bounds%begg:bounds%endg), &
+            c2l_scale_type= 'urbanf', l2g_scale_type='unity' )
+       call c2g( bounds, &
+            soilbiogeochem_nitrogenflux_inst%smin_no3_leached_col(bounds%begc:bounds%endc), &
+            lnd2atm_inst%smin_no3_leached_grc(bounds%begg:bounds%endg), &
+            c2l_scale_type= 'urbanf', l2g_scale_type='unity' )
+    else
+       lnd2atm_inst%smin_no3_runoff_grc(bounds%begg:bounds%endg) = 0._r8
+       lnd2atm_inst%smin_no3_leached_grc(bounds%begg:bounds%endg) = 0._r8
+    end if
 
     call c2g( bounds, &
          water_inst%waterlnd2atmbulk_inst%qflx_ice_runoff_col(bounds%begc:bounds%endc),  &

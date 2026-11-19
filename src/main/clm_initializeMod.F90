@@ -16,7 +16,7 @@ module clm_initializeMod
   use clm_varctl            , only : iulog
   use clm_varctl            , only : use_lch4, use_cn, use_cndv, use_c13, use_c14, nhillslope
   use clm_varctl            , only : use_soil_moisture_streams
-  use clm_instur            , only : wt_lunit, urban_valid, wt_nat_patch, wt_cft, fert_cft
+  use clm_instur            , only : wt_lunit, urban_valid, wt_nat_patch, wt_cft, fert_cft, ftile
   use clm_instur            , only : irrig_method, wt_glc_mec, topo_glc_mec, pct_lake_max, pct_urban_max, ncolumns_hillslope
   use perf_mod              , only : t_startf, t_stopf
   use readParamsMod         , only : readParameters
@@ -238,6 +238,8 @@ contains
     allocate (urban_valid  (begg:endg                      ))
     allocate (wt_cft       (begg:endg, cft_lb:cft_ub       ))
     allocate (fert_cft     (begg:endg, cft_lb:cft_ub       ))
+    allocate (ftile        (begg:endg                      ))
+    ftile(begg:endg) = 0._r8
     allocate (irrig_method (begg:endg, cft_lb:cft_ub       ))
     allocate (wt_glc_mec   (begg:endg, maxpatch_glc     ))
     allocate (topo_glc_mec (begg:endg, maxpatch_glc     ))
@@ -330,7 +332,8 @@ contains
     ! Deallocate surface grid dynamic memory for variables that aren't needed elsewhere.
     ! Some things are kept until the end of initialize2; urban_valid is kept through the
     ! end of the run for error checking, pct_urban_max is kept through the end of the run
-    ! for reweighting in subgridWeights.
+    ! for reweighting in subgridWeights. ftile is kept for the whole run so that
+    ! dyncrop_interp can split each year's crop weight by the same grid-cell fraction.
     deallocate (wt_lunit, wt_cft, wt_glc_mec, pct_lake_max)
     if (use_hillslope)  deallocate (ncolumns_hillslope)
 

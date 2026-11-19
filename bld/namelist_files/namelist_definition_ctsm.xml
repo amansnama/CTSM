@@ -538,6 +538,84 @@ Can only be used with use_groundwater_irrigation = .true.
 <entry id="irrigate" type="logical" category="clm_physics"
        group="clm_inparm"  >
 If TRUE, irrigation will be active.
+</entry>
+
+<entry id="use_tile_drain" type="logical" category="clm_physics"
+       group="clm_inparm"  >
+If TRUE, tile drainage is active on the crop columns created from FTILE on the surface dataset.
+The tile flux is removed from the soil in SoilHydrologyMod (Drainage) and added
+to the total runoff as a separate flux (qflx_tile, history field QTILE). It is not part of
+qflx_drain or qflx_surf. It is sent to the river model as surface runoff (Flrl_rofsur), and the
+nitrate it carries leaves as nitrate runoff (Flrl_no3_runoff). How the nitrate is picked up is
+set by tile_no3_scheme.
+</entry>
+
+<entry id="tile_no3_scheme" type="char*16" category="clm_physics"
+       group="clm_inparm" valid_values="bulk,layer" >
+How tile drainage picks up soil nitrate. Used only if use_tile_drain is TRUE and
+use_nitrif_denitrif and use_vertsoilc are on.
+    bulk  = the tile water carries the bulk dissolved NO3 concentration of the whole soil
+            column, like nitrate leached with subsurface drainage. Each layer loses its share
+            in proportion to its liquid water. CLM has no vertical nitrate transport, so the
+            deep layers where a tile sits hold almost no nitrate; this scheme lets the tile see
+            the nitrate in the whole column. Default.
+    layer = nitrate is taken only from the layers the tile removed water from (at and above
+            the drain), in proportion to the water removed from each.
+</entry>
+
+<entry id="tile_drain_everywhere" type="logical" category="clm_physics"
+       group="clm_inparm"  >
+If TRUE, ignore FTILE on the surface dataset and place a tile drain on every natural
+vegetation and crop column. Intended for testing (for example single-point runs) when the
+surface dataset has no FTILE variable. Used only if use_tile_drain is TRUE. Leave FALSE
+for production runs, where a missing FTILE aborts the run instead of draining everything.
+</entry>
+
+<entry id="tile_drain_scheme" type="char*16" category="clm_physics"
+       group="clm_inparm" valid_values="linear,hooghoudt" >
+Tile drainage discharge equation. Used only if use_tile_drain is TRUE.
+    linear    = q = tile_drain_rate * h, with h the water-table height above the drain (m)
+    hooghoudt = Hooghoudt (1940) as in Valayamkunnath et al. (2022, Water Resources Research,
+                doi:10.1029/2021WR031242): q = (8*K*de*h + 4*K*h^2) / L^2.
+                K is the thickness-weighted saturated conductivity of the saturated soil
+                between the water table and the impermeable depth. de is the equivalent
+                depth of Ritzema (1994), which replaces the depth from the drain to the
+                impermeable layer. L is tile_drain_spacing.
+</entry>
+
+<entry id="tile_drain_depth" type="real" category="clm_physics"
+       group="clm_inparm"  >
+Depth of the tile drain below the surface (m). Used only if use_tile_drain is TRUE.
+Limited to the bottom of the hydrologically active soil column.
+</entry>
+
+<entry id="tile_drain_rate" type="real" category="clm_physics"
+       group="clm_inparm"  >
+Linear tile drainage coefficient (mm H2O/s per m of water table above the drain).
+Used only if use_tile_drain is TRUE and tile_drain_scheme is linear.
+</entry>
+
+<entry id="tile_drain_spacing" type="real" category="clm_physics"
+       group="clm_inparm"  >
+Distance between tile drains, L (m). Used only if use_tile_drain is TRUE and
+tile_drain_scheme is hooghoudt. The default 30 m is the loam value in
+Valayamkunnath et al. (2022) Table S4. That table gives a spacing for each soil
+texture (10 m for clay to 60 m for sand); spacing was their most sensitive parameter.
+</entry>
+
+<entry id="tile_drain_radius" type="real" category="clm_physics"
+       group="clm_inparm"  >
+Tile drain radius, r (m). Used only if use_tile_drain is TRUE and tile_drain_scheme
+is hooghoudt. The default 0.07 m is Valayamkunnath et al. (2022) Table S4.
+</entry>
+
+<entry id="tile_drain_imperv_depth" type="real" category="clm_physics"
+       group="clm_inparm"  >
+Depth from the surface to the impermeable layer below the tile drain (m). Used only
+if use_tile_drain is TRUE and tile_drain_scheme is hooghoudt. The depth D in
+Hooghoudt's equation is this depth minus tile_drain_depth, and is also limited by
+the bottom of the hydrologically active soil column. The namelist default is the
+deepest CLM5 bedrock depth (8.5 m).
 </entry> 
 
 <entry id="crop_fsat_equals_zero" type="logical" category="clm_physics"

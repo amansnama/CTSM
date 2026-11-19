@@ -159,7 +159,27 @@ module clm_varctl
   integer, public :: max_columns_hillslope = 1
 
   ! do not irrigate by default
-  logical, public :: irrigate = .false.            
+  logical, public :: irrigate = .false.
+
+  ! tile drainage: off by default. Where it is active is set from FTILE on the
+  ! surface dataset (column%tile_active); the depth and scheme below are applied to those columns.
+  logical , public :: use_tile_drain   = .false.
+  ! if true, ignore FTILE and put a tile drain on every soil and crop column (for testing)
+  logical , public :: tile_drain_everywhere = .false.
+  ! 'linear' or 'hooghoudt' (Hooghoudt 1940, as in Valayamkunnath et al. 2022).
+  ! The namelist default written by CLMBuildNamelist is hooghoudt.
+  character(len=16), public :: tile_drain_scheme = 'linear'
+  ! how tile drainage picks up nitrate (see SoilBiogeochemNLeachingMod):
+  ! 'bulk' (default) = bulk column dissolved NO3 concentration, like subsurface-drainage leaching;
+  ! 'layer' = only from the layers the tile removed water from
+  character(len=16), public :: tile_no3_scheme = 'bulk'
+  real(r8), public :: tile_drain_depth = 1.0_r8     ! depth of the tile drain below the surface (m)
+  real(r8), public :: tile_drain_rate  = 5.0e-5_r8  ! linear drain coefficient (mm H2O/s per m of water table above the drain)
+  ! Hooghoudt parameters. Defaults written by the namelist are the NWM/Noah-MP loam values
+  ! in Valayamkunnath et al. (2022) Table S4, with the impermeable depth at the CLM5 bedrock bottom.
+  real(r8), public :: tile_drain_spacing = 30._r8       ! distance between tile drains, L (m)
+  real(r8), public :: tile_drain_radius  = 0.07_r8      ! tile drain radius, r (m)
+  real(r8), public :: tile_drain_imperv_depth = 2.0_r8  ! depth from the surface to the impermeable layer (m)
 
   ! set saturated excess runoff to zero for crops
   logical, public :: crop_fsat_equals_zero = .false.

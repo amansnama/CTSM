@@ -435,7 +435,9 @@ contains
     ! !USES
     use clm_instur      , only : wt_lunit, wt_cft
     use landunit_varcon , only : istcrop, istsoil
+    use column_varcon   , only : tiled_cft_col_itype
     use subgridMod      , only : subgrid_get_info_crop, crop_patch_exists
+    use subgridMod      , only : crop_tile_fraction, crop_make_untiled_column, crop_make_tiled_column
     use clm_varpar      , only : cft_lb, cft_ub
     use clm_varctl      , only : create_crop_landunit
     !
@@ -456,6 +458,7 @@ contains
     integer  :: ncols_added                      ! number of columns actually added
     integer  :: nlunits_added                    ! number of landunits actually added
     real(r8) :: wtlunit2gcell                    ! landunit weight in gridcell
+    real(r8) :: f                                ! fraction of the crop landunit that is tiled
     !------------------------------------------------------------------------
 
     ! Set decomposition properties
@@ -485,15 +488,28 @@ contains
        call add_landunit(li=li, gi=gi, ltype=my_ltype, wtgcell=wtlunit2gcell)
        nlunits_added = nlunits_added + 1
        
-       ! Set column and patch properties for this landunit 
-       ! (each column has its own pft)
+       ! Set column and patch properties for this landunit.
+       ! Each crop gets an untiled column (2*100+cft) and, where FTILE covers part of
+       ! the crop landunit, a tiled column (300+cft). Weights sum to wt_cft.
+       ! Each column has its own patch of the same crop.
 
+       f = crop_tile_fraction(gi)
        do cft = cft_lb, cft_ub
           if (crop_patch_exists(gi, cft)) then
-             call add_column(ci=ci, li=li, ctype=((istcrop*100) + cft), wtlunit=wt_cft(gi,cft))
-             ncols_added = ncols_added + 1
-             call add_patch(pi=pi, ci=ci, ptype=cft, wtcol=1.0_r8)
-             npatches_added = npatches_added + 1
+             if (crop_make_untiled_column(gi)) then
+                call add_column(ci=ci, li=li, ctype=((istcrop*100) + cft), &
+                     wtlunit=wt_cft(gi,cft) * (1._r8 - f))
+                ncols_added = ncols_added + 1
+                call add_patch(pi=pi, ci=ci, ptype=cft, wtcol=1.0_r8)
+                npatches_added = npatches_added + 1
+             end if
+             if (crop_make_tiled_column(gi)) then
+                call add_column(ci=ci, li=li, ctype=tiled_cft_col_itype(cft), &
+                     wtlunit=wt_cft(gi,cft) * f)
+                ncols_added = ncols_added + 1
+                call add_patch(pi=pi, ci=ci, ptype=cft, wtcol=1.0_r8)
+                npatches_added = npatches_added + 1
+             end if
           end if
        end do
 

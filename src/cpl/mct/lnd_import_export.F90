@@ -331,6 +331,15 @@ contains
        ! irrigation flux to be removed from main channel storage (negative)
        l2x(index_l2x_Flrl_irrig,i) = - waterlnd2atmbulk_inst%qirrig_grc(g)
 
+       ! nitrate sent to the river. SMIN_NO3_RUNOFF includes the tile contribution.
+       ! Indices are 0 until CIME's land-to-river field list includes these names.
+       if (index_l2x_Flrl_no3_runoff /= 0) then
+          l2x(index_l2x_Flrl_no3_runoff,i) = lnd2atm_inst%smin_no3_runoff_grc(g)
+       end if
+       if (index_l2x_Flrl_no3_leached /= 0) then
+          l2x(index_l2x_Flrl_no3_leached,i) = lnd2atm_inst%smin_no3_leached_grc(g)
+       end if
+
        ! glc coupling
        ! We could avoid setting these fields if glc_present is .false., if that would
        ! help with performance. (The downside would be that we wouldn't have these fields

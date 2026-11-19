@@ -140,6 +140,8 @@ module lnd_import_export
   character(*), parameter :: Flrl_rofgwl    = 'Flrl_rofgwl'
   character(*), parameter :: Flrl_rofi      = 'Flrl_rofi'
   character(*), parameter :: Flrl_irrig     = 'Flrl_irrig'
+  character(*), parameter :: Flrl_no3_runoff  = 'Flrl_no3_runoff'
+  character(*), parameter :: Flrl_no3_leached = 'Flrl_no3_leached'
   character(*), parameter :: Sl_tsrf_elev   = 'Sl_tsrf_elev'
   character(*), parameter :: Sl_topo_elev   = 'Sl_topo_elev'
   character(*), parameter :: Flgl_qice_elev = 'Flgl_qice_elev'
@@ -301,6 +303,9 @@ contains
        call fldlist_add(fldsFrLnd_num, fldsFrlnd, Flrl_rofsub)
        call fldlist_add(fldsFrLnd_num, fldsFrlnd, Flrl_rofi  )
        call fldlist_add(fldsFrLnd_num, fldsFrlnd, Flrl_irrig )
+       ! Carried to the river only after CIME's field list and MOSART import them.
+       call fldlist_add(fldsFrLnd_num, fldsFrlnd, Flrl_no3_runoff)
+       call fldlist_add(fldsFrLnd_num, fldsFrlnd, Flrl_no3_leached)
     end if
 
     ! export to glc if appropriate
@@ -902,6 +907,16 @@ contains
        ! with NaN's (see #1545 for the non-FATES issue)
        call state_setexport_1d(exportState, Flrl_irrig, waterlnd2atmbulk_inst%qirrig_grc(begg:), &
             minus = .true., init_spval=.false., rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    end if
+    if (fldchk(exportState, Flrl_no3_runoff)) then
+       call state_setexport_1d(exportState, Flrl_no3_runoff, lnd2atm_inst%smin_no3_runoff_grc(begg:), &
+            init_spval=.false., rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    end if
+    if (fldchk(exportState, Flrl_no3_leached)) then
+       call state_setexport_1d(exportState, Flrl_no3_leached, lnd2atm_inst%smin_no3_leached_grc(begg:), &
+            init_spval=.false., rc=rc)
        if (ChkErr(rc,__LINE__,u_FILE_u)) return
     end if
     if (fldchk(exportState, Flrl_rofsub)) then

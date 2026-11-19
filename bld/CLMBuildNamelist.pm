@@ -1569,6 +1569,7 @@ sub process_namelist_inline_logic {
   setup_logic_lnd_frac($opts, $nl_flags, $definition, $defaults, $nl, $envxml_ref);
   setup_logic_co2_type($opts, $nl_flags, $definition, $defaults, $nl);
   setup_logic_irrigate($opts, $nl_flags, $definition, $defaults, $nl);
+  setup_logic_tile_drain($opts, $nl_flags, $definition, $defaults, $nl);
   setup_logic_start_type($opts, $nl_flags, $nl);
   setup_logic_decomp_performance($opts,  $nl_flags, $definition, $defaults, $nl);
   setup_logic_roughness_methods($opts, $nl_flags, $definition, $defaults, $nl, $physv);
@@ -1967,6 +1968,24 @@ sub setup_logic_irrigate {
      }
   } else {
      $nl_flags->{'irrigate'} = ".false.";
+  }
+}
+
+#-------------------------------------------------------------------------------
+
+sub setup_logic_tile_drain {
+  my ($opts, $nl_flags, $definition, $defaults, $nl) = @_;
+
+  add_default($opts, $nl_flags->{'inputdata_rootdir'}, $definition, $defaults, $nl, 'use_tile_drain');
+  add_default($opts, $nl_flags->{'inputdata_rootdir'}, $definition, $defaults, $nl, 'tile_drain_everywhere');
+  if ( &value_is_true($nl->get_value('use_tile_drain') ) ) {
+     add_default($opts, $nl_flags->{'inputdata_rootdir'}, $definition, $defaults, $nl, 'tile_drain_scheme');
+     add_default($opts, $nl_flags->{'inputdata_rootdir'}, $definition, $defaults, $nl, 'tile_no3_scheme');
+     add_default($opts, $nl_flags->{'inputdata_rootdir'}, $definition, $defaults, $nl, 'tile_drain_depth');
+     add_default($opts, $nl_flags->{'inputdata_rootdir'}, $definition, $defaults, $nl, 'tile_drain_rate');
+     add_default($opts, $nl_flags->{'inputdata_rootdir'}, $definition, $defaults, $nl, 'tile_drain_spacing');
+     add_default($opts, $nl_flags->{'inputdata_rootdir'}, $definition, $defaults, $nl, 'tile_drain_radius');
+     add_default($opts, $nl_flags->{'inputdata_rootdir'}, $definition, $defaults, $nl, 'tile_drain_imperv_depth');
   }
 }
 

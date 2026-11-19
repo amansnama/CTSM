@@ -71,7 +71,9 @@ module WaterFluxType
 
      real(r8), pointer :: qflx_infl_col            (:)   ! col infiltration (mm H2O /s)
      real(r8), pointer :: qflx_surf_col            (:)   ! col total surface runoff (mm H2O /s)
-     real(r8), pointer :: qflx_drain_col           (:)   ! col sub-surface runoff (mm H2O /s)
+     real(r8), pointer :: qflx_drain_col           (:)   ! col sub-surface runoff (mm H2O /s); does not include qflx_tile_col
+     real(r8), pointer :: qflx_tile_col            (:)   ! col tile drainage (mm H2O /s); separate flux, leaves as surface runoff (not in qflx_drain_col or qflx_surf_col)
+     real(r8), pointer :: qflx_tile_vr_col         (:,:) ! col tile drainage removed from each soil layer (mm H2O /s); sums over layers to qflx_tile_col
      real(r8), pointer :: qflx_latflow_in_col      (:)   ! col hillslope lateral flow input (mm/s)
      real(r8), pointer :: qflx_latflow_out_col     (:)   ! col hillslope lateral flow output (mm/s)
      real(r8), pointer :: volumetric_discharge_col (:)   ! col hillslope discharge (m3/s)
@@ -279,6 +281,13 @@ contains
     call AllocateVar1d(var = this%qflx_drain_col, name = 'qflx_drain_col', &
          container = tracer_vars, &
          bounds = bounds, subgrid_level = subgrid_level_column)
+    call AllocateVar1d(var = this%qflx_tile_col, name = 'qflx_tile_col', &
+         container = tracer_vars, &
+         bounds = bounds, subgrid_level = subgrid_level_column)
+    call AllocateVar2d(var = this%qflx_tile_vr_col, name = 'qflx_tile_vr_col', &
+         container = tracer_vars, &
+         bounds = bounds, subgrid_level = subgrid_level_column, &
+         dim2beg = 1, dim2end = nlevsoi)
     call AllocateVar1d(var = this%qflx_drain_perched_col, name = 'qflx_drain_perched_col', &
          container = tracer_vars, &
          bounds = bounds, subgrid_level = subgrid_level_column)
@@ -502,6 +511,14 @@ contains
          avgflag='A', &
          long_name=this%info%lname('sub-surface drainage'), &
          ptr_col=this%qflx_drain_col, c2l_scale_type='urbanf')
+
+    this%qflx_tile_col(begc:endc) = spval
+    call hist_addfld1d ( &
+         fname=this%info%fname('QTILE'),  &
+         units='mm/s',  &
+         avgflag='A', &
+         long_name=this%info%lname('tile drainage (separate from QDRAI and QOVER; sent to the river model as surface runoff)'), &
+         ptr_col=this%qflx_tile_col, c2l_scale_type='urbanf')
 
     if (use_hillslope) then
        this%qflx_latflow_out_col(begc:endc) = spval
@@ -907,6 +924,11 @@ contains
     ! be 0 there, so initialize the fluxes to 0 everywhere
     this%qflx_tran_veg_patch(bounds%begp:bounds%endp) = 0._r8
     this%qflx_evap_veg_patch(bounds%begp:bounds%endp) = 0._r8
+
+    ! Tile drainage is only computed in the hydrology filter (Drainage), and is read by
+    ! CNNLeaching for all soil columns; zero everywhere so other columns see no tile flux
+    this%qflx_tile_col(bounds%begc:bounds%endc)      = 0._r8
+    this%qflx_tile_vr_col(bounds%begc:bounds%endc,:) = 0._r8
 
     ! needed for CNNLeaching 
     do c = bounds%begc, bounds%endc

@@ -124,10 +124,12 @@ contains
     ! !USES:
     use CropType          , only : crop_type
     use landunit_varcon   , only : istcrop
+    use column_varcon     , only : is_tiled_crop_column
     use clm_varpar        , only : cft_size, cft_lb, cft_ub
     use clm_varctl        , only : use_crop
     use surfrdUtilsMod    , only : collapse_crop_types, collapse_crop_var
     use subgridWeightsMod , only : set_landunit_weight
+    use subgridMod        , only : crop_tile_fraction
 
     implicit none
     !
@@ -137,6 +139,7 @@ contains
     !
     ! !LOCAL VARIABLES:
     integer               :: m,p,c,l,g      ! indices
+    real(r8)              :: f              ! fraction of the crop landunit that is tiled
     real(r8), allocatable :: wtcrop_cur(:)  ! current weight of the crop landunit
     real(r8), allocatable :: wtcft_cur(:,:) ! current cft weights
     real(r8), allocatable :: fertcft_cur(:,:) ! current cft fertilizer
@@ -149,18 +152,19 @@ contains
 
     call dyncrop_file%time_info%set_current_year()
 
-    ! Set new landunit area
+    ! Set new landunit area. Keep wtcrop_cur so the column split below uses this
+    ! year's crop fraction rather than the surface-file value.
     allocate(wtcrop_cur(bounds%begg:bounds%endg))
     call wtcrop%get_current_data(wtcrop_cur)
     do g = bounds%begg, bounds%endg
        call set_landunit_weight(g, istcrop, wtcrop_cur(g))
     end do
-    deallocate(wtcrop_cur)
 
     ! Set new CFT weights
     !
     ! Assumes that memory has been allocated for all CFTs on the crop landunit, and that
-    ! each crop is on its own column.
+    ! each crop column has a single patch. A crop may have an untiled column
+    ! (2*100+cft) and a tiled column (300+cft). Their weights sum to wtcft_cur.
     allocate(wtcft_cur(bounds%begg:bounds%endg, cft_lb:cft_ub))
     call wtcft%get_current_data(wtcft_cur)
 
@@ -202,7 +206,14 @@ contains
              call endrun(subgrid_index=c, subgrid_level=subgrid_level_column, msg=errMsg(sourcefile, __LINE__))
           end if
           
-          col%wtlunit(c) = wtcft_cur(g,m)
+          ! f = min(1, FTILE / this year's crop fraction). The same f multiplies
+          ! every crop. Fertilizer stays the per-area rate on both patches.
+          f = crop_tile_fraction(g, crop_wt=wtcrop_cur(g))
+          if (is_tiled_crop_column(col%itype(c))) then
+             col%wtlunit(c) = wtcft_cur(g,m) * f
+          else
+             col%wtlunit(c) = wtcft_cur(g,m) * (1._r8 - f)
+          end if
           if (use_crop) then
              crop_inst%fertnitro_patch(p) = fertcft_cur(g,m)
           end if
@@ -210,6 +221,7 @@ contains
        end if
     end do
 
+    deallocate(wtcrop_cur)
     deallocate(wtcft_cur)
     deallocate(fertcft_cur)
     deallocate(col_set)

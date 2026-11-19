@@ -25,11 +25,17 @@ module column_varcon
   integer, parameter, public :: icol_road_imperv = isturb_MIN*10 + 4
   integer, parameter, public :: icol_road_perv   = isturb_MIN*10 + 5
 
+  ! Tiled crop columns are 300+cft. They stay on the istcrop landunit. 300 itself is not
+  ! a column type (cft starts above 0), and 400+ is the glacier elevation-class block (istice*100).
+  integer, parameter, public :: icol_tiled_cft0 = 300
+
   !
   ! !PUBLIC MEMBER FUNCTIONS:
   public :: is_hydrologically_active   ! returns true if the given column type is hydrologically active
   public :: ice_class_to_col_itype     ! convert an ice class (1..maxpatch_glc) into col%itype
   public :: col_itype_to_ice_class     ! convert col%itype into an ice class (1..maxpatch_glc)
+  public :: tiled_cft_col_itype        ! col%itype for a tiled crop column of this CFT
+  public :: is_tiled_crop_column       ! true if col%itype is a tiled crop column
   public :: write_coltype_metadata     ! write column type metadata to a netcdf file
 
   character(len=*), parameter, private :: sourcefile = &
@@ -129,6 +135,52 @@ contains
   end function col_itype_to_ice_class
 
   !-----------------------------------------------------------------------
+  function tiled_cft_col_itype(cft) result(col_itype)
+    !
+    ! !DESCRIPTION:
+    ! Column type for the tiled column of this crop functional type: 300 + cft.
+    !
+    ! !USES:
+    use clm_varpar, only : cft_lb, cft_ub
+    use landunit_varcon, only : istice
+    !
+    ! !ARGUMENTS:
+    integer :: col_itype
+    integer, intent(in) :: cft
+    !
+    character(len=*), parameter :: subname = 'tiled_cft_col_itype'
+    !-----------------------------------------------------------------------
+
+    SHR_ASSERT_FL((cft >= cft_lb .and. cft <= cft_ub), sourcefile, __LINE__)
+
+    col_itype = icol_tiled_cft0 + cft
+
+    ! Stay below the glacier elevation-class block (istice*100 + class).
+    SHR_ASSERT_FL(col_itype < istice*100, sourcefile, __LINE__)
+
+  end function tiled_cft_col_itype
+
+  !-----------------------------------------------------------------------
+  function is_tiled_crop_column(col_itype) result(is_tiled)
+    !
+    ! !DESCRIPTION:
+    ! True when col%itype is a tiled crop column (300+cft).
+    !
+    ! !USES:
+    use landunit_varcon, only : istice
+    !
+    ! !ARGUMENTS:
+    logical :: is_tiled
+    integer, intent(in) :: col_itype
+    !
+    character(len=*), parameter :: subname = 'is_tiled_crop_column'
+    !-----------------------------------------------------------------------
+
+    is_tiled = (col_itype > icol_tiled_cft0 .and. col_itype < istice*100)
+
+  end function is_tiled_crop_column
+
+  !-----------------------------------------------------------------------
   subroutine write_coltype_metadata(att_prefix, ncid)
     !
     ! !DESCRIPTION:
@@ -154,6 +206,7 @@ contains
     call ncd_putatt(ncid, ncd_global, att_prefix // 'vegetated_or_bare_soil', 1)
     call ncd_putatt(ncid, ncd_global, att_prefix // 'crop'                  , 2) 
     call ncd_putatt(ncid, ncd_global, att_prefix // 'crop_noncompete'       , '2*100+m, m=cft_lb,cft_ub')
+    call ncd_putatt(ncid, ncd_global, att_prefix // 'crop_tiled'            , '300+m, m=cft_lb,cft_ub')
     call ncd_putatt(ncid, ncd_global, att_prefix // 'landice'               , 3) 
     call ncd_putatt(ncid, ncd_global, att_prefix // 'landice', '4*100+m, m=1,glcnec')
     call ncd_putatt(ncid, ncd_global, att_prefix // 'deep_lake'             , 5) 

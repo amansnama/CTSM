@@ -28,6 +28,8 @@ module clm_cpl_indices
   integer, public ::index_l2x_Flrl_rofsub     ! lnd->rtm input liquid subsurface fluxes
   integer, public ::index_l2x_Flrl_rofi       ! lnd->rtm input frozen fluxes
   integer, public ::index_l2x_Flrl_irrig      ! irrigation withdrawal
+  integer, public ::index_l2x_Flrl_no3_runoff ! NO3 in surface runoff, including tile drainage (gN/m2/s)
+  integer, public ::index_l2x_Flrl_no3_leached ! NO3 in subsurface leaching (gN/m2/s)
 
   integer, public ::index_l2x_Sl_t            ! temperature
   integer, public ::index_l2x_Sl_tref         ! 2m reference temperature
@@ -176,6 +178,10 @@ contains
     index_l2x_Flrl_rofsub   = mct_avect_indexra(l2x,'Flrl_rofsub')
     index_l2x_Flrl_rofi     = mct_avect_indexra(l2x,'Flrl_rofi')
     index_l2x_Flrl_irrig    = mct_avect_indexra(l2x,'Flrl_irrig')
+    ! Present only after CIME's land-to-river field list includes these names.
+    ! Quiet lookup leaves the index at 0 until then, so land-only runs still start.
+    index_l2x_Flrl_no3_runoff  = mct_avect_indexra(l2x,'Flrl_no3_runoff', perrWith='quiet')
+    index_l2x_Flrl_no3_leached = mct_avect_indexra(l2x,'Flrl_no3_leached', perrWith='quiet')
 
     index_l2x_Sl_t          = mct_avect_indexra(l2x,'Sl_t')
     index_l2x_Sl_snowh      = mct_avect_indexra(l2x,'Sl_snowh')

@@ -17,12 +17,15 @@ module initVerticalMod
   use clm_varpar        , only : nlevsoi, nlevsoifl, nlevurb, nlevmaxurbgrnd
   use clm_varctl        , only : fsurdat, iulog
   use clm_varctl        , only : use_extralakelayers
+  use clm_varctl        , only : use_tile_drain, tile_drain_everywhere, tile_drain_scheme
+  use clm_varctl        , only : tile_drain_depth, tile_drain_rate
   use clm_varctl        , only : use_bedrock, rundef
   use clm_varctl        , only : soil_layerstruct_predefined, soil_layerstruct_userdefined
   use clm_varctl        , only : use_fates
   use clm_varcon        , only : zlak, dzlak, zsoi, dzsoi, zisoi, dzsoi_decomp, spval, ispval, grlnd 
   use column_varcon     , only : icol_roof, icol_sunwall, icol_shadewall, is_hydrologically_active
-  use landunit_varcon   , only : istdlak, istice
+  use column_varcon     , only : is_tiled_crop_column
+  use landunit_varcon   , only : istdlak, istice, istsoil, istcrop
   use fileutils         , only : getfil
   use LandunitType      , only : lun                
   use GridcellType      , only : grc                
@@ -665,6 +668,50 @@ contains
        col%GW_ratio(c) = max(GWratio(g), 0.0_r8)
     end do
     deallocate(GWratio)
+
+    !-----------------------------------------------
+    ! Tile drainage: depth and rate, and which columns are active.
+    !
+    ! With tile_drain_everywhere, every soil and crop column drains (test shortcut).
+    ! Otherwise only tiled crop columns (col%itype = 300+cft) drain. Natural vegetation
+    ! and untiled crop columns do not. TILE_DRAIN on the surface file is not read.
+    !-----------------------------------------------
+
+    col%tile_active(begc:endc) = .false.
+    col%tile_depth (begc:endc) = 0._r8
+    col%tile_rate  (begc:endc) = 0._r8
+
+    if (use_tile_drain) then
+       if (tile_drain_depth <= 0._r8) then
+          call shr_sys_abort(' ERROR: tile_drain_depth must be > 0'//&
+               errMsg(sourcefile, __LINE__))
+       end if
+       if (tile_drain_scheme == 'linear' .and. tile_drain_rate < 0._r8) then
+          call shr_sys_abort(' ERROR: tile_drain_rate must be >= 0 for the linear tile drain'//&
+               errMsg(sourcefile, __LINE__))
+       end if
+       if (tile_drain_everywhere) then
+          if (masterproc) write(iulog,*) 'tile_drain_everywhere: ', &
+               'tile drain placed on every soil and crop column'
+       else if (masterproc) then
+          write(iulog,*) 'tile drain placed on tiled crop columns only (col%itype = 300+cft)'
+       end if
+       do c = begc,endc
+          l = col%landunit(c)
+          if (tile_drain_everywhere) then
+             if (lun%itype(l) == istsoil .or. lun%itype(l) == istcrop) then
+                col%tile_active(c) = .true.
+             end if
+          else if (lun%itype(l) == istcrop .and. is_tiled_crop_column(col%itype(c))) then
+             col%tile_active(c) = .true.
+          end if
+          if (col%tile_active(c)) then
+             ! the drain cannot be deeper than the bottom of the hydrologically active soil
+             col%tile_depth(c) = min(tile_drain_depth, col%zi(c,nlevsoi))
+             col%tile_rate(c)  = tile_drain_rate
+          end if
+       end do
+    end if
 
     !-----------------------------------------------
     ! SCA shape function defined

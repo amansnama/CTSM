@@ -879,7 +879,10 @@ contains
           subgrid_weights_diagnostics%pct_nat_pft(g, ptype_1indexing) = patch%wtlunit(p) * 100._r8
        else if (lun%itype(l) == istcrop) then
           ptype_1indexing = ptype + (1 - cft_lb)
-          subgrid_weights_diagnostics%pct_cft(g, ptype_1indexing) = patch%wtlunit(p) * 100._r8
+          ! Add both the untiled and tiled patch of this crop. The array was zeroed
+          ! above, so the sum is the whole crop rather than whichever patch is last.
+          subgrid_weights_diagnostics%pct_cft(g, ptype_1indexing) = &
+               subgrid_weights_diagnostics%pct_cft(g, ptype_1indexing) + patch%wtlunit(p) * 100._r8
        end if
     end do
 
